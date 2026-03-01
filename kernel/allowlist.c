@@ -15,6 +15,7 @@
 #include <linux/compiler_types.h>
 
 #include "klog.h" // IWYU pragma: keep
+#include "ksu.h"
 #include "ksud.h"
 #include "selinux/selinux.h"
 #include "allowlist.h"
@@ -392,6 +393,7 @@ static void do_persistent_allow_list(struct callback_head *_cb)
     struct perm_data *p = NULL;
     loff_t off = 0;
 
+    const struct cred *saved = override_creds(ksu_cred);
     struct file *fp =
         ksu_syms.filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (IS_ERR(fp)) {
@@ -422,6 +424,7 @@ static void do_persistent_allow_list(struct callback_head *_cb)
 close_file:
     filp_close(fp, 0);
 out:
+    revert_creds(saved);
     kfree(_cb);
 }
 
