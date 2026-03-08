@@ -39,6 +39,7 @@ static int manager_uid = -1;
 module_param(manager_uid, int, 0644);
 MODULE_PARM_DESC(manager_uid, "KernelSU Manager UID");
 
+NO_STACK_PROTECTOR_WORKAROUND
 int __init kernelsu_init(void)
 {
 #if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_STACKPROTECTOR_PER_TASK)
