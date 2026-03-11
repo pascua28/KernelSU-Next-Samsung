@@ -2,11 +2,13 @@
 #include <linux/fs.h>
 #include <linux/kobject.h>
 #include <linux/module.h>
+#include <linux/sched.h>
 #include <linux/workqueue.h>
 
 #include "allowlist.h"
 #include "feature.h"
 #include "klog.h" // IWYU pragma: keep
+#include "manager.h"
 #include "throne_tracker.h"
 #include "syscall_hook_manager.h"
 #include "ksud.h"
@@ -16,6 +18,7 @@
 #include "ksu_kallsyms.h"
 #include "ksu_defex.h"
 #include "manager.h"
+#include "selinux/selinux.h"
 
 // workaround for A12-5.10 kernel
 // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
@@ -61,10 +64,10 @@ __attribute__((naked)) int __init kernelsu_init_early(void)
 #endif
 
 struct cred *ksu_cred;
+bool ksu_late_loaded;
 
 int __init kernelsu_init(void)
 {
-
 	int ret;
 
 	pr_info("kernelsu: initializing KernelSU-Next LKM\n");
@@ -88,6 +91,12 @@ int __init kernelsu_init(void)
  		pr_err("kernelsu: defex bypass failed\n");
 		return ret;
 	}
+#ifdef MODULE
+	ksu_late_loaded = (current->pid != 1);
+#else
+	ksu_late_loaded = false;
+#endif
+
 #ifdef CONFIG_KSU_DEBUG
 	pr_alert("*************************************************************");
 	pr_alert("**     NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE NOTICE    **");
@@ -107,15 +116,36 @@ int __init kernelsu_init(void)
 
 	ksu_supercalls_init();
 
-	ksu_syscall_hook_manager_init();
+	if (ksu_late_loaded) {
+		pr_info("late load mode, skipping kprobe hooks\n");
 
-	ksu_allowlist_init();
+		apply_kernelsu_rules();
+		cache_sid();
+		setup_ksu_cred();
 
-	ksu_throne_tracker_init();
+		ksu_allowlist_init();
+		ksu_load_allow_list();
 
-	ksu_ksud_init();
+		ksu_syscall_hook_manager_init();
 
-    ksu_file_wrapper_init();
+		ksu_throne_tracker_init();
+		ksu_observer_init();
+		ksu_file_wrapper_init();
+
+		ksu_boot_completed = true;
+		track_throne(false);
+
+	} else {
+		ksu_syscall_hook_manager_init();
+
+		ksu_allowlist_init();
+
+		ksu_throne_tracker_init();
+
+		ksu_ksud_init();
+
+		ksu_file_wrapper_init();
+	}
 
 #ifdef MODULE
 #ifndef CONFIG_KSU_DEBUG
@@ -145,7 +175,8 @@ void kernelsu_exit(void)
 
 	ksu_observer_exit();
 
-	ksu_ksud_exit();
+	if (!ksu_late_loaded)
+		ksu_ksud_exit();
 
 #ifdef MODULE
     ksu_lkm_exit();
