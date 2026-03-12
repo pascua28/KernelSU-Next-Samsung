@@ -340,7 +340,7 @@ static void add_xperm_rule_raw(struct policydb *db, struct type_datum *src,
 
         if (datum->u.xperms == NULL) {
             datum->u.xperms = (struct avtab_extended_perms *)(kzalloc(
-                sizeof(xperms), GFP_ATOMIC));
+                sizeof(xperms), GFP_KERNEL));
             if (!datum->u.xperms) {
                 pr_err("alloc xperms failed\n");
                 return;
@@ -530,11 +530,11 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 
     if (trans == NULL) {
         trans = (struct filename_trans_datum *)kcalloc(1, sizeof(*trans),
-                                                       GFP_ATOMIC);
+                                                       GFP_KERNEL);
         struct filename_trans_key *new_key =
-            (struct filename_trans_key *)kzalloc(sizeof(*new_key), GFP_ATOMIC);
+            (struct filename_trans_key *)kzalloc(sizeof(*new_key), GFP_KERNEL);
         *new_key = key;
-        new_key->name = kstrdup(key.name, GFP_ATOMIC);
+        new_key->name = kstrdup(key.name, GFP_KERNEL);
         trans->next = last;
         trans->otype = def->value;
         ksu_syms.__hashtab_insert(&db->filename_trans, new_key, trans,
@@ -568,7 +568,7 @@ void *ksu_kvrealloc_compat(const void *p, size_t oldsize, size_t newsize,
     return newp;
 }
 #define ksu_kvrealloc(p, new_size, old_size)                                   \
-    ksu_kvrealloc_compat(p, old_size, new_size, GFP_ATOMIC)
+    ksu_kvrealloc_compat(p, old_size, new_size, GFP_KERNEL)
 
 static bool add_type(struct policydb *db, const char *type_name, bool attr)
 {
@@ -579,7 +579,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
     }
 
     u32 value = ++db->p_types.nprim;
-    type = (struct type_datum *)kzalloc(sizeof(struct type_datum), GFP_ATOMIC);
+    type = (struct type_datum *)kzalloc(sizeof(struct type_datum), GFP_KERNEL);
     if (!type) {
         pr_err("add_type: alloc type_datum failed.\n");
         return false;
@@ -589,7 +589,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
     type->value = value;
     type->attribute = attr;
 
-    char *key = kstrdup(type_name, GFP_ATOMIC);
+    char *key = kstrdup(type_name, GFP_KERNEL);
     if (!key) {
         pr_err("add_type: alloc key failed.\n");
         return false;
