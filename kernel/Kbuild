@@ -16,6 +16,9 @@ kernelsu-objs += seccomp_cache.o
 kernelsu-objs += file_wrapper.o
 kernelsu-objs += util.o
 kernelsu-objs += extras.o
+kernelsu-objs += ksu_kallsyms.o
+kernelsu-objs += ksu_cfi.o
+kernelsu-objs += ksu_pte.o
 
 kernelsu-objs += extras.o
 
@@ -25,7 +28,7 @@ kernelsu-objs += selinux/rules.o
 ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
 ccflags-y += -I$(objtree)/security/selinux -include $(srctree)/include/uapi/asm-generic/errno.h
 
-obj-$(CONFIG_KSU) += kernelsu.o
+obj-m += kernelsu.o
 
 LPATH := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))

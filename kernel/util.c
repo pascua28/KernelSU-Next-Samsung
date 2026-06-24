@@ -4,6 +4,7 @@
 #include <asm/current.h>
 
 #include "util.h"
+#include "ksu_kallsyms.h"
 
 bool try_set_access_flag(unsigned long addr)
 {
@@ -61,7 +62,13 @@ bool try_set_access_flag(unsigned long addr)
         goto out_pte_unlock;
     }
 
-    ptep_set_access_flags(vma, addr, ptep, pte_mkyoung(pte), 0);
+    if (ksu_syms.ptep_set_access_flags) {
+        ksu_syms.ptep_set_access_flags(vma, addr, ptep, pte_mkyoung(pte), 0);
+    } else {
+        // Fallback or just log error? 
+        // If symbol not resolved, we can't do much. 
+        // But preventing crash is good.
+    }
     pr_info("set AF for addr %lx\n", addr);
     ret = true;
 

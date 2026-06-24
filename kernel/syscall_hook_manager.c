@@ -19,6 +19,7 @@
 #include "selinux/selinux.h"
 #include "util.h"
 #include "ksud.h"
+#include "ksu_kallsyms.h"
 
 // Tracepoint registration count management
 // == 1: just us
@@ -71,7 +72,7 @@ static void ksu_mark_running_process_locked()
             continue;
         }
         int uid = task_uid(t).val;
-        const struct cred *cred = get_task_cred(t);
+        const struct cred *cred = ksu_syms.get_task_cred(t);
         bool ksu_root_process = uid == 0 && is_task_ksu_domain(cred);
         bool is_zygote_process = is_zygote(cred);
         bool is_shell = uid == 2000;
@@ -87,7 +88,7 @@ static void ksu_mark_running_process_locked()
             pr_info("hook_manager: unmark process: pid:%d, uid: %d, comm:%s\n",
                     t->pid, uid, t->comm);
         }
-        put_cred(cred);
+        ksu_put_cred(cred);
     }
     read_unlock(&tasklist_lock);
 }
@@ -260,9 +261,15 @@ int ksu_handle_init_mark_tracker(const char __user **filename_user)
 	fn = (const char __user *)addr;
 
 	memset(path, 0, sizeof(path));
-	ret = strncpy_from_user_nofault(path, fn, sizeof(path));
+    if (ksu_syms.strncpy_from_user_nofault)
+	    ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
+    else {
+        ret = -EFAULT;
+    }
+        
 	if (ret < 0 && try_set_access_flag(addr)) {
-		ret = strncpy_from_user_nofault(path, fn, sizeof(path));
+        if (ksu_syms.strncpy_from_user_nofault)
+		    ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
 		pr_info("ksu_handle_init_mark_tracker: %ld\n", ret);
 	}
 
@@ -345,7 +352,14 @@ void ksu_syscall_hook_manager_init(void)
 #endif
 
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-    ret = register_trace_sys_enter(ksu_sys_enter_handler, NULL);
+    if (ksu_syms.__tracepoint_sys_enter) {
+        ret = tracepoint_probe_register(ksu_syms.__tracepoint_sys_enter, 
+                                        ksu_sys_enter_handler, NULL);
+    } else {
+        ret = -ENOENT;
+        pr_err("hook_manager: __tracepoint_sys_enter not found\n");
+    }
+
 #ifndef CONFIG_KRETPROBES
     ksu_mark_running_process_locked();
 #endif
@@ -366,8 +380,11 @@ void ksu_syscall_hook_manager_exit(void)
 {
     pr_info("hook_manager: ksu_hook_manager_exit called\n");
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-    unregister_trace_sys_enter(ksu_sys_enter_handler, NULL);
-    tracepoint_synchronize_unregister();
+    if (ksu_syms.__tracepoint_sys_enter) {
+        tracepoint_probe_unregister(ksu_syms.__tracepoint_sys_enter, 
+                                    ksu_sys_enter_handler, NULL);
+        tracepoint_synchronize_unregister();
+    }
     pr_info("hook_manager: sys_enter tracepoint unregistered\n");
 #endif
 

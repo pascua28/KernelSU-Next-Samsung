@@ -7,6 +7,7 @@
 #include <linux/rculist.h>
 #include <linux/version.h>
 #include "klog.h" // IWYU pragma: keep
+#include "ksu_kallsyms.h"
 #include "throne_tracker.h"
 
 #define MASK_SYSTEM (FS_CREATE | FS_MOVE | FS_EVENT_ON_CHILD)
@@ -49,11 +50,12 @@ static int add_mark_on_inode(struct inode *inode, u32 mask,
 	if (!m)
 		return -ENOMEM;
 
-	fsnotify_init_mark(m, g);
+	ksu_syms.fsnotify_init_mark(m, g);
 	m->mask = mask;
 
-	if (fsnotify_add_inode_mark(m, inode, 0)) {
-		fsnotify_put_mark(m);
+    /* fsnotify_add_inode_mark(m, inode, 0) equivalent */
+	if (ksu_syms.fsnotify_add_mark(m, &inode->i_fsnotify_marks, FSNOTIFY_OBJ_TYPE_INODE, 0, NULL)) {
+		ksu_syms.fsnotify_put_mark(m);
 		return -EINVAL;
 	}
 	*out = m;
@@ -85,8 +87,8 @@ static int watch_one_dir(struct watch_dir *wd)
 static void unwatch_one_dir(struct watch_dir *wd)
 {
 	if (wd->mark) {
-		fsnotify_destroy_mark(wd->mark, g);
-		fsnotify_put_mark(wd->mark);
+		ksu_syms.fsnotify_destroy_mark(wd->mark, g);
+		ksu_syms.fsnotify_put_mark(wd->mark);
 		wd->mark = NULL;
 	}
 	if (wd->inode) {
@@ -107,9 +109,9 @@ int ksu_observer_init(void)
 	int ret = 0;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
-	g = fsnotify_alloc_group(&ksu_ops, 0);
+	g = ((struct fsnotify_group *(*)(const struct fsnotify_ops *, int))ksu_syms.fsnotify_alloc_group)(&ksu_ops, 0);
 #else
-	g = fsnotify_alloc_group(&ksu_ops);
+	g = ((struct fsnotify_group *(*)(const struct fsnotify_ops *))ksu_syms.fsnotify_alloc_group)(&ksu_ops);
 #endif
 	if (IS_ERR(g))
 		return PTR_ERR(g);
@@ -122,6 +124,6 @@ int ksu_observer_init(void)
 void ksu_observer_exit(void)
 {
 	unwatch_one_dir(&g_watch);
-	fsnotify_put_group(g);
+	ksu_syms.fsnotify_put_group(g);
 	pr_info("observer exit done\n");
 }

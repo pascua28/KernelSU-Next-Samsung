@@ -14,12 +14,25 @@
 #include "selinux/selinux.h"
 #include "su_mount_ns.h"
 #include "syscall_hook_manager.h"
+#include "ksu_kallsyms.h"
+
+// void seccomp_filter_release(struct task_struct *tsk);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
 static struct group_info root_groups = { .usage = REFCOUNT_INIT(2) };
 #else
 static struct group_info root_groups = { .usage = ATOMIC_INIT(2) };
 #endif
+
+static inline void ksu_put_group_info(struct group_info *group_info)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
+    if (refcount_dec_and_test(&group_info->usage))
+#else
+    if (atomic_dec_and_test(&group_info->usage))
+#endif
+        ksu_syms.groups_free(group_info);
+}
 
 void setup_groups(struct root_profile *profile, struct cred *cred)
 {
@@ -31,13 +44,13 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
     if (profile->groups_count == 1 && profile->groups[0] == 0) {
         // setgroup to root and return early.
         if (cred->group_info)
-            put_group_info(cred->group_info);
+            ksu_put_group_info(cred->group_info);
         cred->group_info = get_group_info(&root_groups);
         return;
     }
 
     u32 ngroups = profile->groups_count;
-    struct group_info *group_info = groups_alloc(ngroups);
+    struct group_info *group_info = ksu_syms.groups_alloc(ngroups);
     if (!group_info) {
         pr_warn("Failed to setgroups, ENOMEM for: %d\n", profile->uid);
         return;
@@ -49,15 +62,15 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
         kgid_t kgid = make_kgid(current_user_ns(), gid);
         if (!gid_valid(kgid)) {
             pr_warn("Failed to setgroups, invalid gid: %d\n", gid);
-            put_group_info(group_info);
+            ksu_put_group_info(group_info);
             return;
         }
         group_info->gid[i] = kgid;
     }
 
-    groups_sort(group_info);
-    set_groups(cred, group_info);
-    put_group_info(group_info);
+    ksu_syms.groups_sort(group_info);
+    ksu_syms.set_groups(cred, group_info);
+    ksu_put_group_info(group_info);
 }
 
 void seccomp_filter_release(struct task_struct *tsk);
@@ -98,7 +111,8 @@ static void disable_seccomp(void)
     fake->sighand = NULL;
 #endif
 
-    seccomp_filter_release(fake);
+    if (ksu_syms.seccomp_filter_release)
+        ksu_syms.seccomp_filter_release(fake);
     kfree(fake);
 }
 
@@ -108,7 +122,7 @@ void escape_with_root_profile(void)
     struct task_struct *p = current;
     struct task_struct *t;
 
-    cred = prepare_creds();
+    cred = ksu_syms.prepare_creds();
     if (!cred) {
         pr_warn("prepare_creds failed!\n");
         return;
@@ -116,7 +130,7 @@ void escape_with_root_profile(void)
 
     if (cred->euid.val == 0) {
         pr_warn("Already root, don't escape!\n");
-        abort_creds(cred);
+        ksu_syms.abort_creds(cred);
         return;
     }
 
@@ -149,7 +163,7 @@ void escape_with_root_profile(void)
     setup_groups(profile, cred);
     setup_selinux(profile->selinux_domain, cred);
 
-    commit_creds(cred);
+    ksu_syms.commit_creds(cred);
 
     disable_seccomp();
 
@@ -162,12 +176,12 @@ void escape_with_root_profile(void)
 
 void escape_to_root_for_init(void)
 {
-    struct cred *cred = prepare_creds();
+    struct cred *cred = ksu_syms.prepare_creds();
     if (!cred) {
         pr_err("Failed to prepare init's creds!\n");
         return;
     }
 
     setup_selinux(KERNEL_SU_CONTEXT, cred);
-    commit_creds(cred);
+    ksu_syms.commit_creds(cred);
 }

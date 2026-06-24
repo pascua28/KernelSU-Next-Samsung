@@ -26,6 +26,7 @@
 #include "util.h"
 #include "selinux/selinux.h"
 #include "throne_tracker.h"
+#include "ksu_kallsyms.h"
 
 bool ksu_module_mounted __read_mostly = false;
 bool ksu_boot_completed __read_mostly = false;
@@ -78,7 +79,7 @@ void on_post_fs_data(void)
 	stop_input_hook();
 }
 
-extern void ext4_unregister_sysfs(struct super_block *sb);
+// extern void ext4_unregister_sysfs(struct super_block *sb);
 int nuke_ext4_sysfs(const char *mnt)
 {
 	struct path path;
@@ -90,15 +91,16 @@ int nuke_ext4_sysfs(const char *mnt)
 
 	struct super_block *sb = path.dentry->d_inode->i_sb;
 	const char *name = sb->s_type->name;
-	if (strcmp(name, "ext4") != 0) {
-		pr_info("nuke but module aren't mounted\n");
-		path_put(&path);
-		return -EINVAL;
-	}
+	    if (strcmp(name, "ext4") != 0) {
+        pr_info("nuke but module aren't mounted\n");
+        path_put(&path);
+        return -EINVAL;
+    }
 
-	ext4_unregister_sysfs(sb);
-	path_put(&path);
-	return 0;
+    if (ksu_syms.ext4_unregister_sysfs)
+        ksu_syms.ext4_unregister_sysfs(sb);
+    path_put(&path);
+    return 0;
 }
 
 void on_module_mounted(void)
@@ -202,14 +204,14 @@ static bool check_argv(struct user_arg_ptr argv, int index,
 	if (argc <= index)
 		return false;
 
-	p = get_user_arg_ptr(argv, index);
-	if (!p || IS_ERR(p))
-		goto fail;
+	    p = get_user_arg_ptr(argv, index);
+    if (!p || IS_ERR(p))
+        goto fail;
 
-	if (strncpy_from_user_nofault(buf, p, buf_len) <= 0)
-		goto fail;
+    if (ksu_syms.strncpy_from_user_nofault(buf, p, buf_len) <= 0)
+        goto fail;
 
-	buf[buf_len - 1] = '\0';
+    buf[buf_len - 1] = '\0';
 	return !strcmp(buf, expected);
 
 fail:
@@ -263,12 +265,12 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			pr_info("exec zygote, /data prepared, second_stage: %d\n",
 				init_second_stage_executed);
 			rcu_read_lock();
-			struct task_struct *init_task =
-				rcu_dereference(current->real_parent);
-			if (init_task)
-				task_work_add(init_task, &on_post_fs_data_cb, TWA_RESUME);
-			rcu_read_unlock();
-			first_zygote = false;
+			            struct task_struct *init_task =
+                rcu_dereference(current->real_parent);
+            if (init_task)
+                ksu_syms.task_work_add(init_task, &on_post_fs_data_cb, TWA_RESUME);
+            rcu_read_unlock();
+            first_zygote = false;
 			stop_execve_hook();
 		}
 	}
@@ -495,13 +497,14 @@ static int sys_execve_handler_pre(struct kprobe *p, struct pt_regs *regs)
 	addr = untagged_addr((unsigned long)*filename_user);
 	fn = (const char __user *)addr;
 
-	memset(path, 0, sizeof(path));
-	ret = strncpy_from_user_nofault(path, fn, 32);
-	if (ret < 0 && try_set_access_flag(addr)) {
-		ret = strncpy_from_user_nofault(path, fn, 32);
-	}
-	if (ret < 0) {
-		pr_err("Access filename failed for execve_handler_pre\n");
+	    memset(path, 0, sizeof(path));
+    ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
+    if (ret < 0 && try_set_access_flag(addr)) {
+        ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
+        pr_info("ksu_handle_init_mark_tracker: %ld\n", ret);
+    }
+    if (ret < 0) {
+        pr_err("Access filename failed for execve_handler_pre\n");
 		return 0;
 	}
 	filename_in.name = path;
@@ -547,10 +550,10 @@ static int sys_fstat_handler_post(struct kretprobe_instance *p,
 	if (statbuf) {
 		void __user *st_size_ptr = statbuf + offsetof(struct stat, st_size);
 		long size, new_size;
-		if (!copy_from_user_nofault(&size, st_size_ptr, sizeof(long))) {
+		if (!ksu_syms.copy_from_user_nofault(&size, st_size_ptr, sizeof(long))) {
 			new_size = size + ksu_rc_len;
 			pr_info("adding ksu_rc_len: %ld -> %ld", size, new_size);
-			if (!copy_to_user_nofault(st_size_ptr, &new_size, sizeof(long))) {
+			if (!ksu_syms.copy_to_user_nofault(st_size_ptr, &new_size, sizeof(long))) {
 				pr_info("added ksu_rc_len");
 			} else {
 				pr_err("add ksu_rc_len failed: statbuf 0x%lx",
@@ -661,4 +664,265 @@ void ksu_ksud_exit()
 	// this should be done before unregister sys_read_kp
 	// unregister_kprobe(&sys_read_kp);
 	unregister_kprobe(&input_event_kp);
+
+    /* Cancel any pending late init work */
+    // ksu_lkm_exit(); // Forward declaration or move the function up
 }
+
+/* 
+ * LKM Late Initialization Logic 
+ * Used when module is loaded on a running system
+ */
+
+/* Wrappers for UMH calls */
+static noinline struct subprocess_info *ksu_umh_setup(void *fn, const char *path, 
+                                                   char **argv, char **envp, gfp_t gfp_mask,
+                                                   void *init, void *cleanup, void *data)
+{
+    register const char *r_path asm("x0") = path;
+    register char **r_argv asm("x1") = argv;
+    register char **r_envp asm("x2") = envp;
+    register long r_mask asm("x3") = gfp_mask;
+    register void *r_init asm("x4") = init;
+    register void *r_cleanup asm("x5") = cleanup;
+    register void *r_data asm("x6") = data;
+    register struct subprocess_info *r_ret asm("x0");
+    
+    asm volatile(
+        "blr %8\n"
+        : "=r"(r_ret)
+        : "r"(r_path), "r"(r_argv), "r"(r_envp), "r"(r_mask), 
+          "r"(r_init), "r"(r_cleanup), "r"(r_data), "r"(fn)
+        : "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", 
+          "x16", "x17", "x18", "x30", "memory", "cc"
+    );
+    return r_ret;
+}
+
+static noinline int ksu_umh_exec(void *fn, struct subprocess_info *info, int wait)
+{
+    register struct subprocess_info *r_info asm("x0") = info;
+    register long r_wait asm("x1") = wait;
+    register int r_ret asm("w0");
+    
+    asm volatile(
+        "blr %3\n"
+        : "=r"(r_ret)
+        : "r"(r_info), "r"(r_wait), "r"(fn)
+        : "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", 
+          "x16", "x17", "x18", "x30", "memory", "cc"
+    );
+    return r_ret;
+}
+
+/* Helper to setup UMH and patch the struct layout issues */
+static struct subprocess_info *ksu_umh_setup_fixed(const char *path, char **argv, char **envp, gfp_t gfp_mask,
+                                                  void *init, void *cleanup, void *data)
+{
+    struct subprocess_info *info;
+    unsigned long *ptr;
+    
+    info = ksu_umh_setup((void *)ksu_syms.call_usermodehelper_setup, path, argv, envp, gfp_mask, init, cleanup, data);
+    
+    if (info) {
+        /* 
+         * WORKAROUND: fix corrupt path pointer at offset 56.
+         */
+        ptr = (unsigned long *)info;
+        ptr[7] = (unsigned long)path; /* Offset 56 / 8 = 7 */
+    }
+    return info;
+}
+
+static struct delayed_work ksu_late_init_work;
+
+/* 
+ * SELinux Credential Patching 
+ * Required to bypass permission denials during late init
+ */
+
+struct task_security_struct_hack {
+    u32 osid;
+    u32 sid;
+    u32 exec_sid;
+    u32 create_sid;
+    u32 keycreate_sid;
+    u32 sockcreate_sid;
+};
+
+static int ksu_set_selinux_context(const char *ctx, bool set_exec)
+{
+    struct cred *new;
+    struct task_security_struct_hack *tsec;
+    u32 sid;
+    int ret;
+    u32 len = strlen(ctx);
+
+    if (!ksu_syms.security_secctx_to_secid || !ksu_syms.prepare_creds || !ksu_syms.commit_creds) {
+        pr_err("ksu: missing symbols for credential patching\n");
+        return -EINVAL;
+    }
+
+    /* Resolve SID */
+    ret = ksu_syms.security_secctx_to_secid(ctx, len, &sid);
+    if (ret) {
+        pr_err("ksu: failed to resolve SID for %s: %d\n", ctx, ret);
+        return ret;
+    }
+
+    new = ksu_syms.prepare_creds();
+    if (!new)
+        return -ENOMEM;
+
+    tsec = (struct task_security_struct_hack *)new->security;
+    
+    /* Determine valid SIDs for transition */
+    if (set_exec) {
+        tsec->exec_sid = sid;
+        pr_info("ksu: set exec_sid to %u (%s)\n", sid, ctx);
+    } else {
+        tsec->sid = sid;
+        pr_info("ksu: set sid to %u (%s)\n", sid, ctx);
+    }
+    
+    return ksu_syms.commit_creds(new);
+}
+
+/*
+ * Helper to patch specific creds (used in UMH init)
+ * Does NOT call commit_creds, just modifies the security struct.
+ */
+static int ksu_set_selinux_context_cred(struct cred *new, const char *ctx)
+{
+    struct task_security_struct_hack *tsec;
+    u32 sid;
+    int ret;
+    u32 len = strlen(ctx);
+
+    if (!ksu_syms.security_secctx_to_secid)
+        return -EINVAL;
+
+    ret = ksu_syms.security_secctx_to_secid(ctx, len, &sid);
+    if (ret) {
+        pr_err("ksu: failed to resolve SID for %s: %d\n", ctx, ret);
+        return ret;
+    }
+
+    tsec = (struct task_security_struct_hack *)new->security;
+    /* Set both sid and exec_sid to be sure */
+    tsec->sid = sid;
+    tsec->exec_sid = sid;
+    pr_info("ksu: patched UMH creds to %u (%s)\n", sid, ctx);
+    
+    return 0;
+}
+
+/* 
+ * UMH init callback 
+ * Runs in the UMH kernel thread context, before execve.
+ * This is the ONLY place we can successfully change the UMH process credentials.
+ */
+static int ksu_umh_init(struct subprocess_info *info, struct cred *new)
+{
+    const char *ctx = (const char *)info->data;
+    if (ctx) {
+        return ksu_set_selinux_context_cred(new, ctx);
+    }
+    return 0;
+}
+
+
+
+
+extern void apply_kernelsu_rules(void);
+
+static void ksu_late_init_work_fn(struct work_struct *work)
+{
+
+    struct subprocess_info *info;
+    int ret;
+    
+    char *envp[] = { "HOME=/", "PATH=/sbin:/system/bin:/data/adb/ksu/bin", NULL };
+    char *argv_post[] = { "/system/bin/sh", "-c", "/data/adb/ksud post-fs-data", NULL };
+    char *argv_services[] = { "/system/bin/sh", "-c", "/data/adb/ksud services", NULL };
+    char *argv_boot[] = { "/system/bin/sh", "-c", "/data/adb/ksud boot-completed", NULL };
+
+    pr_info("ksu: performing LKM late init\n");
+
+    /* 
+     * 0. Inject KernelSU SELinux rules 
+     * This adds 'kernelsu' domain and allow rules to the current policy
+     */
+    apply_kernelsu_rules();
+    pr_info("ksu: applied kernelsu SELinux rules\n");
+
+    /* 
+     * Switch to KERNEL_SU_CONTEXT to gain permissions and correct domain.
+     * We use this for both file operations and execution.
+     * The 'su' domain is injected by apply_kernelsu_rules() and is permissive.
+     */
+
+    if (ksu_set_selinux_context(KERNEL_SU_CONTEXT, false) == 0) {
+        pr_info("ksu: switched to %s context for file operations\n", KERNEL_SU_CONTEXT);
+    }
+
+
+    /* 1. Trigger internal kernel states */
+    on_module_mounted();
+    on_post_fs_data();
+    on_boot_completed();
+
+    /* 2. Execute ksud stages manually */
+    if (!ksu_syms.call_usermodehelper_setup || !ksu_syms.call_usermodehelper_exec) {
+        pr_err("ksu: UMH symbols missing, cannot start ksud\n");
+        return;
+    }
+
+    /* 
+     * UMH execution 
+     * We pass KERNEL_SU_CONTEXT as data to the init function, 
+     * which will use it to patch the credentials of the UMH process.
+     */
+
+
+
+    pr_info("ksu: triggering ksud post-fs-data\n");
+    info = ksu_umh_setup_fixed("/system/bin/sh", argv_post, envp, GFP_KERNEL, ksu_umh_init, NULL, (void *)KERNEL_SU_CONTEXT);
+    if (info) {
+
+        ret = ksu_umh_exec((void *)ksu_syms.call_usermodehelper_exec, info, UMH_WAIT_PROC);
+        pr_info("ksu: ksud post-fs-data result: %d\n", ret);
+    }
+
+    pr_info("ksu: triggering ksud services\n");
+    info = ksu_umh_setup_fixed("/system/bin/sh", argv_services, envp, GFP_KERNEL, ksu_umh_init, NULL, (void *)KERNEL_SU_CONTEXT);
+    if (info) {
+
+        ret = ksu_umh_exec((void *)ksu_syms.call_usermodehelper_exec, info, UMH_WAIT_PROC);
+        pr_info("ksu: ksud services result: %d\n", ret);
+    }
+
+    pr_info("ksu: triggering ksud boot-completed\n");
+    info = ksu_umh_setup_fixed("/system/bin/sh", argv_boot, envp, GFP_KERNEL, ksu_umh_init, NULL, (void *)KERNEL_SU_CONTEXT);
+    if (info) {
+
+        ret = ksu_umh_exec((void *)ksu_syms.call_usermodehelper_exec, info, UMH_WAIT_PROC);
+        pr_info("ksu: ksud boot-completed result: %d\n", ret);
+    }
+}
+
+
+void ksu_lkm_late_init(void)
+{
+    /* Schedule late init after 3 seconds to ensure stability */
+    INIT_DELAYED_WORK(&ksu_late_init_work, ksu_late_init_work_fn);
+    schedule_delayed_work(&ksu_late_init_work, msecs_to_jiffies(3000));
+    pr_info("ksu: LKM late init scheduled in 3 seconds\n");
+}
+
+/* Need to expose this for module exit, can be called from ksu.c or here */
+void ksu_lkm_exit(void)
+{
+    cancel_delayed_work_sync(&ksu_late_init_work);
+}
+

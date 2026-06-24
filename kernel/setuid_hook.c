@@ -21,6 +21,7 @@
 #include "supercalls.h"
 #include "syscall_hook_manager.h"
 #include "kernel_umount.h"
+#include "ksu_kallsyms.h"
 
 static void ksu_install_manager_fd_tw_func(struct callback_head *cb)
 {
@@ -48,7 +49,7 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
         if (!cb)
             return 0;
         cb->func = ksu_install_manager_fd_tw_func;
-        if (task_work_add(current, cb, TWA_RESUME)) {
+        if (ksu_syms.task_work_add(current, cb, TWA_RESUME)) {
             kfree(cb);
             pr_warn("install manager fd add task_work failed\n");
         }

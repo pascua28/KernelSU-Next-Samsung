@@ -18,6 +18,7 @@
 #include "manager.h"
 #include "syscall_hook_manager.h"
 #include "su_mount_ns.h"
+#include "ksu_kallsyms.h"
 
 #define FILE_MAGIC 0x7f4b5355 // ' KSU', u32
 #define FILE_FORMAT_VERSION 3 // u32
@@ -380,12 +381,12 @@ static void do_persistent_allow_list(struct callback_head *_cb)
 	}
 
 	// store magic and version
-	if (kernel_write(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
+	if (ksu_syms.kernel_write(fp, &magic, sizeof(magic), &off) != sizeof(magic)) {
 		pr_err("save_allow_list write magic failed.\n");
 		goto close_file;
 	}
 
-	if (kernel_write(fp, &version, sizeof(version), &off) != sizeof(version)) {
+	if (ksu_syms.kernel_write(fp, &version, sizeof(version), &off) != sizeof(version)) {
 		pr_err("save_allow_list write version failed.\n");
 		goto close_file;
 	}
@@ -395,7 +396,7 @@ static void do_persistent_allow_list(struct callback_head *_cb)
 		pr_info("save allow list, name: %s uid :%d, allow: %d\n",
 			p->profile.key, p->profile.current_uid, p->profile.allow_su);
 
-		kernel_write(fp, &p->profile, sizeof(p->profile), &off);
+		ksu_syms.kernel_write(fp, &p->profile, sizeof(p->profile), &off);
 	}
 
 close_file:
@@ -416,13 +417,13 @@ void persistent_allow_list()
 	}
 
 	struct callback_head *cb =
-		kzalloc(sizeof(struct callback_head), GFP_KERNEL);
+				kzalloc(sizeof(struct callback_head), GFP_KERNEL);
 	if (!cb) {
 		pr_err("save_allow_list alloc cb err\b");
 		goto put_task;
 	}
 	cb->func = do_persistent_allow_list;
-	if (task_work_add(tsk, cb, TWA_RESUME)) {
+	if (ksu_syms.task_work_add(tsk, cb, TWA_RESUME)) {
 		kfree(cb);
 		pr_warn("save_allow_list add task_work failed\n");
 	}
@@ -452,13 +453,13 @@ void ksu_load_allow_list()
 	}
 
 	// verify magic
-	if (kernel_read(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
+	if (ksu_syms.kernel_read(fp, &magic, sizeof(magic), &off) != sizeof(magic) ||
 	    magic != FILE_MAGIC) {
 		pr_err("allowlist file invalid: %d!\n", magic);
 		goto exit;
 	}
 
-	if (kernel_read(fp, &version, sizeof(version), &off) != sizeof(version)) {
+	if (ksu_syms.kernel_read(fp, &version, sizeof(version), &off) != sizeof(version)) {
 		pr_err("allowlist read version: %d failed\n", version);
 		goto exit;
 	}
@@ -468,7 +469,7 @@ void ksu_load_allow_list()
 	while (true) {
 		struct app_profile profile;
 
-		ret = kernel_read(fp, &profile, sizeof(profile), &off);
+		ret = ksu_syms.kernel_read(fp, &profile, sizeof(profile), &off);
 
 		if (ret <= 0) {
 			pr_info("load_allow_list read err: %zd\n", ret);

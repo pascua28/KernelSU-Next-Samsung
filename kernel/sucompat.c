@@ -19,6 +19,7 @@
 #include "sucompat.h"
 #include "app_profile.h"
 #include "util.h"
+#include "ksu_kallsyms.h"
 
 extern void write_sulog(uint8_t sym);
 
@@ -82,7 +83,9 @@ int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
 
 	char path[sizeof(su) + 1];
 	memset(path, 0, sizeof(path));
-	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    if (ksu_syms.strncpy_from_user_nofault)
+        ksu_syms.strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    // Fallback? If symbol not found, path remains empty.
 
     if (unlikely(!memcmp(path, su, sizeof(su)))) {
         write_sulog('a');
@@ -108,7 +111,9 @@ int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 
 	char path[sizeof(su) + 1];
 	memset(path, 0, sizeof(path));
-	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    if (ksu_syms.strncpy_from_user_nofault)
+        ksu_syms.strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    // Fallback? If symbol not found, path remains empty.
 
     if (unlikely(!memcmp(path, su, sizeof(su)))) {
         write_sulog('s');
@@ -138,10 +143,13 @@ int ksu_handle_execve_sucompat(const char __user **filename_user,
 	addr = untagged_addr((unsigned long)*filename_user);
 	fn = (const char __user *)addr;
 	memset(path, 0, sizeof(path));
-	ret = strncpy_from_user_nofault(path, fn, sizeof(path));
+	ret = -EFAULT;
+    if (ksu_syms.strncpy_from_user_nofault)
+	    ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
 
 	if (ret < 0 && try_set_access_flag(addr)) {
-		ret = strncpy_from_user_nofault(path, fn, sizeof(path));
+		if (ksu_syms.strncpy_from_user_nofault)
+            ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
 	}
 
 	if (ret < 0 && preempt_count()) {

@@ -17,6 +17,7 @@
 #include "feature.h"
 #include "ksud.h"
 #include "ksu.h"
+#include "ksu_kallsyms.h"
 
 static bool ksu_kernel_umount_enabled = true;
 
@@ -41,14 +42,17 @@ static const struct ksu_feature_handler kernel_umount_handler = {
 	.set_handler = kernel_umount_feature_set,
 };
 
-extern int path_umount(struct path *path, int flags);
+// extern int path_umount(struct path *path, int flags);
 
 static void ksu_umount_mnt(struct path *path, int flags)
 {
-	int err = path_umount(path, flags);
-	if (err) {
-		pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
-	}
+    int err = 0;
+    if (ksu_syms.path_umount)
+        err = ksu_syms.path_umount(path, flags);
+    
+    if (err) {
+        pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
+    }
 }
 
 static void try_umount(const char *mnt, int flags)
@@ -75,7 +79,7 @@ struct umount_tw {
 static void umount_tw_func(struct callback_head *cb)
 {
 	struct umount_tw *tw = container_of(cb, struct umount_tw, cb);
-	const struct cred *saved = override_creds(ksu_cred);
+	const struct cred *saved = ksu_syms.override_creds(ksu_cred);
 
     struct mount_entry *entry;
     down_read(&mount_list_lock);
@@ -86,7 +90,7 @@ static void umount_tw_func(struct callback_head *cb)
     }
     up_read(&mount_list_lock);
 
-	revert_creds(saved);
+	ksu_syms.revert_creds(saved);
 
 	kfree(tw);
 }
@@ -140,11 +144,11 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
 
 	tw->cb.func = umount_tw_func;
 
-	int err = task_work_add(current, &tw->cb, TWA_RESUME);
-	if (err) {
-		kfree(tw);
-		pr_warn("unmount add task_work failed\n");
-	}
+    int err = ksu_syms.task_work_add(current, &tw->cb, TWA_RESUME);
+    if (err) {
+        kfree(tw);
+        pr_warn("unmount add task_work failed\n");
+    }
 
 	return 0;
 }

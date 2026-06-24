@@ -12,6 +12,7 @@
 #include "klog.h" // IWYU pragma: keep
 #include "manager.h"
 #include "throne_tracker.h"
+#include "ksu_kallsyms.h"
 
 uid_t ksu_manager_appid = KSU_INVALID_APPID;
 
@@ -220,7 +221,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 					goto skip_iterate;
 				}
 
-				iterate_dir(file, &ctx.ctx);
+				ksu_syms.iterate_dir(file, &ctx.ctx);
 				filp_close(file, NULL);
 			}
 		skip_iterate:
@@ -272,13 +273,13 @@ void track_throne(bool prune_only)
 	loff_t line_start = 0;
 	char buf[KSU_MAX_PACKAGE_NAME];
 	for (;;) {
-		ssize_t count = kernel_read(fp, &chr, sizeof(chr), &pos);
+		ssize_t count = ksu_syms.kernel_read(fp, &chr, sizeof(chr), &pos);
 		if (count != sizeof(chr))
 			break;
 		if (chr != '\n')
 			continue;
 
-		count = kernel_read(fp, buf, sizeof(buf), &line_start);
+		count = ksu_syms.kernel_read(fp, buf, sizeof(buf), &line_start);
 
 		struct uid_data *data = kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
 		if (!data) {
