@@ -728,8 +728,10 @@ static struct subprocess_info *ksu_umh_setup_fixed(const char *path, char **argv
         /* 
          * WORKAROUND: fix corrupt path pointer at offset 56.
          */
+	pr_info("info->path before = %s\n", info->path);
         ptr = (unsigned long *)info;
         ptr[7] = (unsigned long)path; /* Offset 56 / 8 = 7 */
+	pr_info("info->path after = %s\n", info->path);
     }
     return info;
 }
