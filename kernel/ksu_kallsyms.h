@@ -189,6 +189,8 @@ struct ksu_symbols {
                                                          void (*cleanup)(struct subprocess_info *info),
                                                          void *data);
     int (*call_usermodehelper_exec)(struct subprocess_info *info, int wait);
+
+    struct file *(*filp_open)(const char *, int, umode_t);
 };
 
 

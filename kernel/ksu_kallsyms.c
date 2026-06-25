@@ -331,6 +331,8 @@ int ksu_init_symbols(void)
     ksu_syms.call_usermodehelper_setup = (void *)ksu_lookup_name_unrestricted("call_usermodehelper_setup");
     ksu_syms.call_usermodehelper_exec = (void *)ksu_lookup_name_unrestricted("call_usermodehelper_exec");
 
+    ksu_syms.filp_open = (void *)ksu_lookup_name_unrestricted("filp_open");
+
     if (!ksu_syms.fsnotify_alloc_group) {
         pr_warn("ksu: fsnotify symbols not found, module may fail to load\n");
 

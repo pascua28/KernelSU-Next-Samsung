@@ -374,7 +374,7 @@ static void do_persistent_allow_list(struct callback_head *_cb)
 
 	mutex_lock(&allowlist_mutex);
 	struct file *fp =
-		filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		ksu_syms.filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (IS_ERR(fp)) {
 		pr_err("save_allow_list create file failed: %ld\n", PTR_ERR(fp));
 		goto unlock;
@@ -446,7 +446,7 @@ void ksu_load_allow_list()
 #endif
 
 	// load allowlist now!
-	fp = filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
+	fp = ksu_syms.filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
 		pr_err("load_allow_list open file failed: %ld\n", PTR_ERR(fp));
 		return;

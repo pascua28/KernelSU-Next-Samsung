@@ -194,7 +194,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 			struct file *file;
 
 			if (!stop) {
-				file = filp_open(pos->dirpath, O_RDONLY | O_NOFOLLOW, 0);
+				file = ksu_syms.filp_open(pos->dirpath, O_RDONLY | O_NOFOLLOW, 0);
 				if (IS_ERR(file)) {
 					pr_err("Failed to open directory: %s, err: %ld\n",
 						pos->dirpath, PTR_ERR(file));
@@ -258,7 +258,7 @@ static bool is_uid_exist(uid_t uid, char *package, void *data)
 
 void track_throne(bool prune_only)
 {
-	struct file *fp = filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+	struct file *fp = ksu_syms.filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
 		pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n", __func__,
 			PTR_ERR(fp));
