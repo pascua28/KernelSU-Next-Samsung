@@ -113,7 +113,7 @@ void kernelsu_exit(void)
 	ksu_feature_exit();
 
 	if (ksu_cred) {
-		ksu_put_cred(ksu_cred);
+		ksu_syms.put_cred(ksu_cred);
 	}
 }
 

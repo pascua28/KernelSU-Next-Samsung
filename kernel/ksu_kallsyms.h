@@ -137,7 +137,7 @@ struct ksu_symbols {
     struct cred *(*prepare_creds)(void);
     int (*commit_creds)(struct cred *new);
     struct cred *(*prepare_kernel_cred)(struct task_struct *task);
-    void (*__put_cred)(struct cred *cred);
+    void (*put_cred)(const struct cred *_cred);
     void (*abort_creds)(struct cred *new);
     const struct cred *(*get_task_cred)(struct task_struct *task);
     const struct cred *(*override_creds)(const struct cred *new);
@@ -228,12 +228,4 @@ static inline long ksu_call_func_cfi_bypass(void *fn, long arg0, long arg1)
     );
     return ret;
 }
-
-static inline void ksu_put_cred(const struct cred *cred)
-{
-    struct cred *non_const_cred = (struct cred *)cred;
-    if (non_const_cred && atomic_dec_and_test(&non_const_cred->usage))
-        ksu_syms.__put_cred(non_const_cred);
-}
-
 #endif /* _KSU_KALLSYMS_H */

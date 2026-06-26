@@ -88,7 +88,7 @@ static void ksu_mark_running_process_locked()
             pr_info("hook_manager: unmark process: pid:%d, uid: %d, comm:%s\n",
                     t->pid, uid, t->comm);
         }
-        ksu_put_cred(cred);
+        ksu_syms.put_cred(cred);
     }
     read_unlock(&tasklist_lock);
 }

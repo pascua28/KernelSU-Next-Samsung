@@ -278,7 +278,7 @@ int ksu_init_symbols(void)
     ksu_syms.prepare_creds = (void *)ksu_lookup_name_unrestricted("prepare_creds");
     ksu_syms.commit_creds = (void *)ksu_lookup_name_unrestricted("commit_creds");
     ksu_syms.prepare_kernel_cred = (void *)ksu_lookup_name_unrestricted("prepare_kernel_cred");
-    ksu_syms.__put_cred = (void *)ksu_lookup_name_unrestricted("__put_cred");
+    ksu_syms.put_cred = (void *)ksu_lookup_name_unrestricted("put_cred");
     ksu_syms.abort_creds = (void *)ksu_lookup_name_unrestricted("abort_creds");
     ksu_syms.get_task_cred = (void *)ksu_lookup_name_unrestricted("get_task_cred");
     ksu_syms.override_creds = (void *)ksu_lookup_name_unrestricted("override_creds");
