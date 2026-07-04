@@ -333,6 +333,12 @@ int ksu_init_symbols(void)
 
     ksu_syms.filp_open = (void *)ksu_lookup_name_unrestricted("filp_open");
 
+    /* DEFEX functions to hook */
+    ksu_syms.task_defex_user_exec = (void *)ksu_lookup_name_unrestricted("task_defex_user_exec");
+    ksu_syms.task_defex_check_creds = (void *)ksu_lookup_name_unrestricted("task_defex_check_creds");
+    ksu_syms.is_task_creds_ready = (void *)ksu_lookup_name_unrestricted("is_task_creds_ready");
+    ksu_syms.get_dc_target_dpath = (void *)ksu_lookup_name_unrestricted("get_dc_target_dpath");
+
     if (!ksu_syms.fsnotify_alloc_group) {
         pr_warn("ksu: fsnotify symbols not found, module may fail to load\n");
 

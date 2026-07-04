@@ -19,6 +19,7 @@ kernelsu-objs += extras.o
 kernelsu-objs += ksu_kallsyms.o
 kernelsu-objs += ksu_cfi.o
 kernelsu-objs += ksu_pte.o
+kernelsu-objs += ksu_defex.o
 
 kernelsu-objs += extras.o
 

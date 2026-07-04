@@ -14,6 +14,7 @@
 #include "ksu.h"
 #include "file_wrapper.h"
 #include "ksu_kallsyms.h"
+#include "ksu_defex.h"
 #include "manager.h"
 
 struct cred *ksu_cred;
@@ -39,6 +40,12 @@ int __init kernelsu_init(void)
 	ret = ksu_init_symbols();
 	if (ret) {
 		pr_err("kernelsu: symbol resolution failed: %d\n", ret);
+		return ret;
+	}
+
+	ret = ksu_init_defex_bypass();
+	if (ret) {
+		pr_err("kernelsu: defex bypass failed\n");
 		return ret;
 	}
 

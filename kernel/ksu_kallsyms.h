@@ -11,6 +11,8 @@
 #include <linux/version.h>
 #include <linux/mm.h>
 
+#include "../../security/samsung/defex_lsm/include/defex_internal.h"
+
 /* CFI bypass support */
 #ifdef CONFIG_CFI_CLANG
 #define KSU_NO_CFI __nocfi
@@ -191,6 +193,12 @@ struct ksu_symbols {
     int (*call_usermodehelper_exec)(struct subprocess_info *info, int wait);
 
     struct file *(*filp_open)(const char *, int, umode_t);
+
+    /* Defex functions */
+    int (*task_defex_user_exec)(const char *new_file);
+    int (*task_defex_check_creds)(struct defex_context *dc);
+    int (*is_task_creds_ready)(void);
+    struct path *(*get_dc_target_dpath)(struct defex_context *dc);
 };
 
 
