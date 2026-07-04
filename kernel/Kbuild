@@ -33,11 +33,11 @@ LPATH := /usr/bin/env PATH="$$PATH":/usr/bin:/usr/local/bin
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 # ksu_version: major * 30000 + git version for historical reasons
-$(eval KSU_VERSION=$(shell expr 30000 + 2995))
+$(eval KSU_VERSION=$(shell expr 30000 + 3033))
 $(info -- KernelSU-Next version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
 
-KSU_GIT_TAG := v3.0.0
+KSU_GIT_TAG := v3.1.0
 
 $(eval KSU_VERSION_TAG=$(KSU_GIT_TAG))
 $(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
