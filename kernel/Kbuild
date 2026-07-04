@@ -21,8 +21,6 @@ kernelsu-objs += ksu_cfi.o
 kernelsu-objs += ksu_pte.o
 kernelsu-objs += ksu_defex.o
 
-kernelsu-objs += extras.o
-
 kernelsu-objs += selinux/selinux.o
 kernelsu-objs += selinux/sepolicy.o
 kernelsu-objs += selinux/rules.o

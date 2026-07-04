@@ -805,6 +805,30 @@ fun ModuleItem(
     var showMenu by remember { mutableStateOf(false) }
     var showShortcutDialog by remember { mutableStateOf(false) }
     var shortcutType by remember { mutableStateOf("") }
+    var dialogInitialIcon by remember { mutableStateOf<String?>(null) }
+
+    fun normalizeIconPath(p: String?): String? {
+        if (p.isNullOrBlank()) return null
+
+        try {
+            val candidate = "/data/adb/modules/${module.id}/$p"
+            val f = SuFile(candidate)
+            if (f.exists()) return "su://$candidate"
+        } catch (_: Exception) {
+        }
+
+        if (p.startsWith("/")) {
+            try {
+                val f = SuFile(p)
+                if (f.exists()) return "su://$p"
+            } catch (_: Exception) {
+            }
+            return "file://$p"
+        }
+
+        return p
+    }
+    
     val haptic = LocalHapticFeedback.current
 
     val context = LocalContext.current
@@ -812,6 +836,7 @@ fun ModuleItem(
     if (showShortcutDialog) {
         ShortcutDialog(
             initialName = module.name,
+            initialIconUri = dialogInitialIcon,
             onDismiss = { showShortcutDialog = false },
             onConfirm = { name, iconUri ->
                 showShortcutDialog = false
@@ -854,6 +879,7 @@ fun ModuleItem(
                                     onClick = {
                                         showMenu = false
                                         shortcutType = "webui"
+                                        dialogInitialIcon = normalizeIconPath(module.webUiIconPath)
                                         showShortcutDialog = true
                                     },
                                     contentPadding = ButtonDefaults.TextButtonContentPadding
@@ -878,6 +904,7 @@ fun ModuleItem(
                                     onClick = {
                                         showMenu = false
                                         shortcutType = "action"
+                                        dialogInitialIcon = normalizeIconPath(module.actionIconPath)
                                         showShortcutDialog = true
                                     },
                                     contentPadding = ButtonDefaults.TextButtonContentPadding
@@ -955,7 +982,7 @@ fun ModuleItem(
                         .matchParentSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (module.banner.startsWith("https", true) || module.banner.startsWith("http", true)) {
+                    if (module.banner.startsWith("http", true)) {
                         AsyncImage(
                             model = module.banner,
                             contentDescription = null,
@@ -969,10 +996,17 @@ fun ModuleItem(
                         val bannerData = remember(module.banner) {
                             try {
                                 val file = SuFile("/data/adb/modules/${module.id}/${module.banner}")
-                                file.newInputStream().use { it.readBytes() }
+                                return@remember file.newInputStream().use { it.readBytes() }
                             } catch (_: Exception) {
-                                null
                             }
+
+                            try {
+                                val file = SuFile("/data/adb/modules_update/${module.id}/${module.banner}")
+                                return@remember file.newInputStream().use { it.readBytes() }
+                            } catch (_: Exception) {
+                            }
+
+                            null
                         }
                         if (bannerData != null) {
                             AsyncImage(
@@ -1047,11 +1081,7 @@ fun ModuleItem(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 LabelItem(
-                                    text = formatSize(module.size),
-                                    style = LabelItemDefaults.style.copy(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
+                                    text = formatSize(module.size)
                                 )
                                 if (module.remove) {
                                     LabelItem(
@@ -1059,24 +1089,6 @@ fun ModuleItem(
                                         style = LabelItemDefaults.style.copy(
                                             containerColor = MaterialTheme.colorScheme.errorContainer,
                                             contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                        )
-                                    )
-                                }
-                                if (module.isMetaModule && !module.remove) {
-                                    LabelItem(
-                                        text = stringResource(R.string.meta_module),
-                                        style = LabelItemDefaults.style.copy(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    )
-                                }
-                                if (zygiskImpl.isNotBlank() && zygiskImpl != "None" && module.name == zygiskImpl && !module.remove) {
-                                    LabelItem(
-                                        text = stringResource(R.string.zygisk),
-                                        style = LabelItemDefaults.style.copy(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                         )
                                     )
                                 }
@@ -1109,13 +1121,31 @@ fun ModuleItem(
                                         )
                                     }
                                 }
+                                if (module.isMetaModule && !module.remove) {
+                                    LabelItem(
+                                        text = stringResource(R.string.meta_module),
+                                        style = LabelItemDefaults.style.copy(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    )
+                                }
+                                if (zygiskImpl.isNotBlank() && zygiskImpl != "None" && module.name == zygiskImpl && !module.remove) {
+                                    LabelItem(
+                                        text = stringResource(R.string.zygisk),
+                                        style = LabelItemDefaults.style.copy(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    )
+                                }
                                 if (module.enabled && !module.remove) {
                                     if (module.hasWebUi && filterZygiskModules) {
                                         LabelItem(
                                             text = stringResource(R.string.webui),
                                             style = LabelItemDefaults.style.copy(
-                                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                                             )
                                         )
                                     }
@@ -1426,6 +1456,8 @@ fun ModuleItemPreview() {
         banner = "",
         zygiskRequired = false,
         isMetaModule = false,
+        actionIconPath = null,
+        webUiIconPath = null,
         donate = ""
     )
     ModuleItem(
