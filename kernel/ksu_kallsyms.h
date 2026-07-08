@@ -12,6 +12,7 @@
 #include <linux/mm.h>
 
 #include "../../security/samsung/defex_lsm/include/defex_internal.h"
+#include "../../security/selinux/ss/hashtab.h"
 
 /* CFI bypass support */
 #ifdef CONFIG_CFI_CLANG
