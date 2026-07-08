@@ -339,7 +339,7 @@ int ksu_init_symbols(void)
     ksu_syms.is_task_creds_ready = (void *)ksu_lookup_name_unrestricted("is_task_creds_ready");
     ksu_syms.get_dc_target_dpath = (void *)ksu_lookup_name_unrestricted("get_dc_target_dpath");
 
-    ksu_syms.user_struct = (void *)ksu_lookup_name_unrestricted("user_struct ");
+    ksu_syms.alloc_uid = (void *)ksu_lookup_name_unrestricted("alloc_uid");
     ksu_syms.free_uid = (void *)ksu_lookup_name_unrestricted("free_uid");
     ksu_syms.set_cred_ucounts = (void *)ksu_lookup_name_unrestricted("set_cred_ucounts");
 
