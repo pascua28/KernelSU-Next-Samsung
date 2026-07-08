@@ -199,6 +199,10 @@ struct ksu_symbols {
     int (*task_defex_check_creds)(struct defex_context *dc);
     int (*is_task_creds_ready)(void);
     struct path *(*get_dc_target_dpath)(struct defex_context *dc);
+
+    struct user_struct *(*alloc_uid)(kuid_t);
+    void (*free_uid)(struct user_struct *);
+    int (*set_cred_ucounts)(struct cred *);
 };
 
 
