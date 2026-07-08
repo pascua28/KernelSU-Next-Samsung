@@ -351,6 +351,7 @@ int ksu_init_symbols(void)
     ksu_syms.ebitmap_destroy = (void *)ksu_lookup_name_unrestricted("ebitmap_destroy");
     ksu_syms.hashtab_destroy = (void *)ksu_lookup_name_unrestricted("hashtab_destroy");
     ksu_syms.hashtab_map = (void *)ksu_lookup_name_unrestricted("hashtab_map");
+    ksu_syms.avtab_destroy = (void *)ksu_lookup_name_unrestricted("avtab_destroy");
 
     if (!ksu_syms.fsnotify_alloc_group) {
         pr_warn("ksu: fsnotify symbols not found, module may fail to load\n");

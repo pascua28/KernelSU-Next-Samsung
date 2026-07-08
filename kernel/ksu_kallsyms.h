@@ -219,6 +219,7 @@ struct ksu_symbols {
     int (*hashtab_map)(struct hashtab *h,
                 int (*apply)(void *k, void *d, void *args),
                 void *args);
+    void (*avtab_destroy)(struct avtab *h);
 };
 
 
