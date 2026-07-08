@@ -345,6 +345,13 @@ int ksu_init_symbols(void)
 
     ksu_syms.selinux_xfrm_notify_policyload = (void *)ksu_lookup_name_unrestricted("selinux_xfrm_notify_policyload");
 
+    ksu_syms.avtab_alloc_dup = (void *)ksu_lookup_name_unrestricted("avtab_alloc_dup");
+    ksu_syms.ebitmap_cpy = (void *)ksu_lookup_name_unrestricted("ebitmap_cpy");
+    ksu_syms.hashtab_duplicate = (void *)ksu_lookup_name_unrestricted("hashtab_duplicate");
+    ksu_syms.ebitmap_destroy = (void *)ksu_lookup_name_unrestricted("ebitmap_destroy");
+    ksu_syms.hashtab_destroy = (void *)ksu_lookup_name_unrestricted("hashtab_destroy");
+    ksu_syms.hashtab_map = (void *)ksu_lookup_name_unrestricted("hashtab_map");
+
     if (!ksu_syms.fsnotify_alloc_group) {
         pr_warn("ksu: fsnotify symbols not found, module may fail to load\n");
 

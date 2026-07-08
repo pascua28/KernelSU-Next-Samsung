@@ -861,7 +861,7 @@ static int destroy_hashtab_node(void *key, void *datum, void *data)
 static int shallow_copy_hashtab(struct hashtab *new_tab,
                                 struct hashtab *old_tab)
 {
-    return hashtab_duplicate(new_tab, old_tab, copy_hashtab_node,
+    return ksu_syms.hashtab_duplicate(new_tab, old_tab, copy_hashtab_node,
                              destroy_hashtab_node, NULL);
 }
 
@@ -904,7 +904,7 @@ copy_class_datum_partially_callback(struct hashtab_node *new_node,
                 n->expr = e;
             }
             if (olde->expr_type == CEXPR_NAMES) {
-                if (ebitmap_cpy(&e->names, &olde->names) < 0) {
+                if (ksu_syms.ebitmap_cpy(&e->names, &olde->names) < 0) {
                     goto out_nomem;
                 }
             }
@@ -930,7 +930,7 @@ static int destroy_class_datum_partially_callback(void *key, void *datum,
         for (n = cls->constraints; n;) {
             for (e = n->expr; e;) {
                 if (e->expr_type == CEXPR_NAMES) {
-                    ebitmap_destroy(&e->names);
+                    ksu_syms.ksu_syms.ebitmap_destroy(&e->names);
                 }
                 eprev = e;
                 e = e->next;
@@ -953,7 +953,7 @@ static void free_class_datum_partially(struct policydb *db)
     }
 
     if (db->p_classes.table.htable) {
-        hashtab_map(&db->p_classes.table,
+        ksu_syms.hashtab_map(&db->p_classes.table,
                     destroy_class_datum_partially_callback, NULL);
         hashtab_destroy(&db->p_classes.table);
     }
@@ -977,7 +977,7 @@ static int copy_class_datum_partially(struct policydb *new_db,
     }
     new_db->class_val_to_struct = new_class_val_to_struct;
 
-    ret = hashtab_duplicate(&new_db->p_classes.table, &old_db->p_classes.table,
+    ret = ksu_syms.hashtab_duplicate(&new_db->p_classes.table, &old_db->p_classes.table,
                             copy_class_datum_partially_callback,
                             destroy_class_datum_partially_callback, new_db);
 
@@ -998,14 +998,14 @@ static int copy_avtab(struct avtab *new_avtab, struct avtab *old_avtab)
 {
     int ret, i;
     struct avtab_node *n, *p;
-    ret = avtab_alloc_dup(new_avtab, old_avtab);
+    ret = ksu_syms.avtab_alloc_dup(new_avtab, old_avtab);
     if (ret < 0)
         return ret;
 
     for (i = 0; i < old_avtab->nslot; i++) {
         n = old_avtab->htable[i];
         while (n) {
-            p = avtab_insert_nonunique(new_avtab, &n->key, &n->datum);
+            p = ksu_syms.avtab_insert_nonunique(new_avtab, &n->key, &n->datum);
             if (!p) {
                 ret = -ENOMEM;
                 goto out_free;
@@ -1039,7 +1039,7 @@ copy_role_datum_partially_callback(struct hashtab_node *new_node,
     new_node->datum = new_role;
     new_node->key = old_node->key;
 
-    ret = ebitmap_cpy(&new_role->types, &role->types);
+    ret = ksu_syms.ebitmap_cpy(&new_role->types, &role->types);
     if (ret) {
         goto out;
     }
@@ -1054,7 +1054,7 @@ static int destroy_role_datum_partially_callback(void *key, void *datum,
 {
     struct role_datum *role = datum;
     if (role) {
-        ebitmap_destroy(&role->types);
+        ksu_syms.ksu_syms.ebitmap_destroy(&role->types);
         kfree(role);
     }
     return 0;
@@ -1066,7 +1066,7 @@ static void free_role_datum_partially(struct policydb *db)
         kfree(db->role_val_to_struct);
     }
     if (db->p_roles.table.htable) {
-        hashtab_map(&db->p_roles.table, destroy_role_datum_partially_callback,
+        ksu_syms.hashtab_map(&db->p_roles.table, destroy_role_datum_partially_callback,
                     NULL);
         hashtab_destroy(&db->p_roles.table);
     }
@@ -1090,7 +1090,7 @@ static int copy_role_datum_partially(struct policydb *new_db,
     }
     new_db->role_val_to_struct = new_role_val_to_struct;
 
-    ret = hashtab_duplicate(&new_db->p_roles.table, &old_db->p_roles.table,
+    ret = ksu_syms.hashtab_duplicate(&new_db->p_roles.table, &old_db->p_roles.table,
                             copy_role_datum_partially_callback,
                             destroy_role_datum_partially_callback, new_db);
     if (ret)
@@ -1110,7 +1110,7 @@ static void free_type_datum_partially(struct policydb *db)
     u32 sz = db->p_types.nprim, i;
     if (db->type_attr_map_array) {
         for (i = 0; i < sz; i++) {
-            ebitmap_destroy(&db->type_attr_map_array[i]);
+            ksu_syms.ksu_syms.ebitmap_destroy(&db->type_attr_map_array[i]);
         }
 
         kvfree(db->type_attr_map_array);
@@ -1151,7 +1151,7 @@ static int copy_type_datum_partially(struct policydb *new_db,
 
     new_db->type_attr_map_array = new_type_attr_map_array;
     for (i = 0; i < sz; i++) {
-        ret = ebitmap_cpy(&new_db->type_attr_map_array[i],
+        ret = ksu_syms.ebitmap_cpy(&new_db->type_attr_map_array[i],
                           &old_db->type_attr_map_array[i]);
         if (ret < 0)
             goto out;
@@ -1196,13 +1196,13 @@ out:
 
 static void free_permissive_map(struct policydb *db)
 {
-    ebitmap_destroy(&db->permissive_map);
+    ksu_syms.ksu_syms.ebitmap_destroy(&db->permissive_map);
 }
 
 static int copy_permissive_map(struct policydb *new_db, struct policydb *old_db)
 {
     // On failure, the old ebitmap is cleaned.
-    return ebitmap_cpy(&new_db->permissive_map, &old_db->permissive_map);
+    return ksu_syms.ebitmap_cpy(&new_db->permissive_map, &old_db->permissive_map);
 }
 
 // ======== filename_trans ========

@@ -205,6 +205,19 @@ struct ksu_symbols {
     int (*set_cred_ucounts)(struct cred *);
 
     void (*selinux_xfrm_notify_policyload)(void);
+
+    int (*avtab_alloc_dup)(struct avtab *new, const struct avtab *orig);
+    int (*ebitmap_cpy)(struct ebitmap *dst, struct ebitmap *src);
+    int (*hashtab_duplicate)(struct hashtab *new, struct hashtab *orig,
+                int (*copy)(struct hashtab_node *new,
+                        struct hashtab_node *orig, void *args),
+                int (*destroy)(void *k, void *d, void *args),
+                void *args);
+    void (*ebitmap_destroy)(struct ebitmap *e);
+    void (*hashtab_destroy)(struct hashtab *h);
+    int (*hashtab_map)(struct hashtab *h,
+                int (*apply)(void *k, void *d, void *args),
+                void *args);
 };
 
 
