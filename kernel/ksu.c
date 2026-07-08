@@ -169,6 +169,12 @@ int __init kernelsu_init(void)
         track_throne(false);
     }
 #endif
+
+	if (!getenforce()) {
+		pr_info("Permissive SELinux, enforcing\n");
+		setenforce(true);
+	}
+
 	return 0;
 }
 
