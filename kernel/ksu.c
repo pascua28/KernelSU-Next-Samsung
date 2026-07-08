@@ -20,6 +20,10 @@
 #include "manager.h"
 #include "selinux/selinux.h"
 
+static int manager_uid = -1;
+module_param(manager_uid, int, 0644);
+MODULE_PARM_DESC(manager_uid, "KernelSU Manager UID");
+
 // workaround for A12-5.10 kernel
 // Some third-party kernel (e.g. linegaeOS) uses wrong toolchain, which supports
 // CC_HAVE_STACKPROTECTOR_SYSREG while gki's toolchain doesn't.
@@ -35,10 +39,6 @@ unsigned long __stack_chk_guard __ro_after_init
     __attribute__((visibility("hidden")));
 
 struct cred *ksu_cred;
-
-static int manager_uid = -1;
-module_param(manager_uid, int, 0644);
-MODULE_PARM_DESC(manager_uid, "KernelSU Manager UID");
 
 __attribute__((no_stack_protector)) void ksu_setup_stack_chk_guard()
 {
