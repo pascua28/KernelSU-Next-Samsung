@@ -930,7 +930,7 @@ static int destroy_class_datum_partially_callback(void *key, void *datum,
         for (n = cls->constraints; n;) {
             for (e = n->expr; e;) {
                 if (e->expr_type == CEXPR_NAMES) {
-                    ksu_syms.ksu_syms.ebitmap_destroy(&e->names);
+                    ksu_syms.ebitmap_destroy(&e->names);
                 }
                 eprev = e;
                 e = e->next;
@@ -1054,7 +1054,7 @@ static int destroy_role_datum_partially_callback(void *key, void *datum,
 {
     struct role_datum *role = datum;
     if (role) {
-        ksu_syms.ksu_syms.ebitmap_destroy(&role->types);
+        ksu_syms.ebitmap_destroy(&role->types);
         kfree(role);
     }
     return 0;
@@ -1110,7 +1110,7 @@ static void free_type_datum_partially(struct policydb *db)
     u32 sz = db->p_types.nprim, i;
     if (db->type_attr_map_array) {
         for (i = 0; i < sz; i++) {
-            ksu_syms.ksu_syms.ebitmap_destroy(&db->type_attr_map_array[i]);
+            ksu_syms.ebitmap_destroy(&db->type_attr_map_array[i]);
         }
 
         kvfree(db->type_attr_map_array);
@@ -1196,7 +1196,7 @@ out:
 
 static void free_permissive_map(struct policydb *db)
 {
-    ksu_syms.ksu_syms.ebitmap_destroy(&db->permissive_map);
+    ksu_syms.ebitmap_destroy(&db->permissive_map);
 }
 
 static int copy_permissive_map(struct policydb *new_db, struct policydb *old_db)
