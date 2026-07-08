@@ -203,6 +203,8 @@ struct ksu_symbols {
     struct user_struct *(*alloc_uid)(kuid_t);
     void (*free_uid)(struct user_struct *);
     int (*set_cred_ucounts)(struct cred *);
+
+    void (*selinux_xfrm_notify_policyload)(void);
 };
 
 

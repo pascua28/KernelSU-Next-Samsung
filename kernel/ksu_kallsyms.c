@@ -343,6 +343,8 @@ int ksu_init_symbols(void)
     ksu_syms.free_uid = (void *)ksu_lookup_name_unrestricted("free_uid");
     ksu_syms.set_cred_ucounts = (void *)ksu_lookup_name_unrestricted("set_cred_ucounts");
 
+    ksu_syms.selinux_xfrm_notify_policyload = (void *)ksu_lookup_name_unrestricted("selinux_xfrm_notify_policyload");
+
     if (!ksu_syms.fsnotify_alloc_group) {
         pr_warn("ksu: fsnotify symbols not found, module may fail to load\n");
 

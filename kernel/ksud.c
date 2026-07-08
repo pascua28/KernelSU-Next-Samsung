@@ -261,7 +261,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			struct callback_head *cb = kzalloc(sizeof(*cb), GFP_ATOMIC);
 			if (cb) {
 				cb->func = ksu_initialize_selinux_tw_func;
-				if (task_work_add(current, cb, TWA_RESUME)) {
+				if (ksu_syms.task_work_add(current, cb, TWA_RESUME)) {
 					kfree(cb);
 					pr_warn("ksu_initialize_selinux failed to add task work\n");
 				}
