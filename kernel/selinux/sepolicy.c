@@ -955,7 +955,7 @@ static void free_class_datum_partially(struct policydb *db)
     if (db->p_classes.table.htable) {
         ksu_syms.hashtab_map(&db->p_classes.table,
                     destroy_class_datum_partially_callback, NULL);
-        hashtab_destroy(&db->p_classes.table);
+        ksu_syms.hashtab_destroy(&db->p_classes.table);
     }
 }
 
@@ -1017,7 +1017,7 @@ static int copy_avtab(struct avtab *new_avtab, struct avtab *old_avtab)
     return 0;
 
 out_free:
-    avtab_destroy(new_avtab);
+    ksu_syms.avtab_destroy(new_avtab);
     return ret;
 }
 
@@ -1068,7 +1068,7 @@ static void free_role_datum_partially(struct policydb *db)
     if (db->p_roles.table.htable) {
         ksu_syms.hashtab_map(&db->p_roles.table, destroy_role_datum_partially_callback,
                     NULL);
-        hashtab_destroy(&db->p_roles.table);
+        ksu_syms.hashtab_destroy(&db->p_roles.table);
     }
 }
 
@@ -1124,7 +1124,7 @@ static void free_type_datum_partially(struct policydb *db)
         kvfree(db->sym_val_to_name[SYM_TYPES]);
     }
 
-    hashtab_destroy(&db->p_types.table);
+    ksu_syms.hashtab_destroy(&db->p_types.table);
 }
 
 static int copy_type_datum_partially(struct policydb *new_db,
@@ -1209,7 +1209,7 @@ static int copy_permissive_map(struct policydb *new_db, struct policydb *old_db)
 
 static void free_filename_trans(struct policydb *db)
 {
-    hashtab_destroy(&db->filename_trans);
+    ksu_syms.hashtab_destroy(&db->filename_trans);
 }
 
 static int copy_filename_trans(struct policydb *new_db, struct policydb *old_db)
@@ -1230,7 +1230,7 @@ void ksu_destroy_sepolicy(struct selinux_policy *pol)
 
     free_class_datum_partially(db);
 
-    avtab_destroy(&db->te_avtab);
+    ksu_syms.avtab_destroy(&db->te_avtab);
 
     free_role_datum_partially(db);
 
