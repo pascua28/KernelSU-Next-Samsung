@@ -140,12 +140,6 @@ int __init kernelsu_init(void)
 
 		ksu_boot_completed = true;
 		track_throne(false);
-
-		if (!getenforce()) {
-			pr_info("Permissive SELinux, enforcing\n");
-			setenforce(true);
-		}
-
 	} else {
 		ksu_syscall_hook_manager_init();
 
@@ -173,12 +167,6 @@ int __init kernelsu_init(void)
         track_throne(false);
     }
 #endif
-
-	if (!getenforce()) {
-		pr_info("Permissive SELinux, enforcing\n");
-		setenforce(true);
-	}
-
 	return 0;
 }
 
