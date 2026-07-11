@@ -196,7 +196,6 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 					goto skip_iterate;
 
 				bool is_manager = is_manager_apk(candidate_path);
-				pr_info("Found new base.apk at path: %s, is_manager: %d\n", candidate_path, is_manager);
 
 				if (likely(!is_manager))
 					goto skip_iterate;
