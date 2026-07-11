@@ -23,6 +23,7 @@
 #include "linux/lsm_audit.h" // IWYU pragma: keep
 #include "xfrm.h"
 #include "compat/kernel_compat.h"
+#include "../ksu_kallsyms.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 #define SELINUX_POLICY_INSTEAD_SELINUX_SS
@@ -37,7 +38,7 @@ static struct policydb *get_policydb(void)
     struct policydb *db;
 #ifdef KSU_COMPAT_USE_SELINUX_STATE
 #ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
-    struct selinux_policy *policy = selinux_state.policy;
+    struct selinux_policy *policy = ksu_syms.selinux_state->policy;
     db = &policy->policydb;
 #else
     struct selinux_ss *ss = selinux_state.ss;
@@ -58,18 +59,18 @@ extern int avc_ss_reset(struct selinux_avc *avc, u32 seqno);
 // reset avc cache table, otherwise the new rules will not take effect if already denied
 static void reset_avc_cache()
 {
+    return;
 #if ((!defined(KSU_COMPAT_USE_SELINUX_STATE)) || \
 	LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
     avc_ss_reset(0);
     selnl_notify_policyload(0);
     selinux_status_update_policyload(0);
 #else
-    struct selinux_avc *avc = selinux_state.avc;
-    avc_ss_reset(avc, 0);
-    selnl_notify_policyload(0);
-    selinux_status_update_policyload(&selinux_state, 0);
+    ksu_syms.avc_ss_reset(ksu_syms.selinux_state->avc, 0);
+    if (ksu_syms.selnl_notify_policyload) ksu_syms.selnl_notify_policyload(0);
+    if (ksu_syms.selinux_status_update_policyload) ksu_syms.selinux_status_update_policyload(ksu_syms.selinux_state, 0);
 #endif
-    selinux_xfrm_notify_policyload();
+    ksu_syms.selinux_xfrm_notify_policyload();
 }
 
 #ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
@@ -100,6 +101,8 @@ static int apply_kernelsu_rules_fn(void *ptr)
     ksu_typeattribute(db, KERNEL_SU_DOMAIN, "mlstrustedsubject");
     ksu_typeattribute(db, KERNEL_SU_DOMAIN, "netdomain");
     ksu_typeattribute(db, KERNEL_SU_DOMAIN, "bluetoothdomain");
+    ksu_typeattribute(db, KERNEL_SU_DOMAIN, "type"); // Ensure it has fundamental type attribute if needed, usually 'domain' is enough but 'type' is strict?
+
 
     // Create unconstrained file type
     ksu_type(db, KERNEL_SU_FILE, "file_type");
@@ -196,9 +199,9 @@ void apply_kernelsu_rules()
 	}
 
 #ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
-	struct selinux_policy *pol, *old_pol = selinux_state.policy;
-	mutex_lock(&selinux_state.policy_mutex);
-	pol = ksu_dup_sepolicy(rcu_dereference_protected(old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
+	struct selinux_policy *pol, *old_pol = ksu_syms.selinux_state->policy;
+	mutex_lock(&ksu_syms.selinux_state->policy_mutex);
+	pol = ksu_dup_sepolicy(rcu_dereference_protected(old_pol, lockdep_is_held(&ksu_syms.selinux_state->policy_mutex)));
 	if (!pol) {
 		pr_err("failed to dup selinux_policy\n");
 		goto out_unlock;
@@ -207,13 +210,13 @@ void apply_kernelsu_rules()
 
 	apply_kernelsu_rules_fn((void *)db);
 
-	rcu_assign_pointer(selinux_state.policy, pol);
+	rcu_assign_pointer(ksu_syms.selinux_state->policy, pol);
 	synchronize_rcu();
 	ksu_destroy_sepolicy(old_pol);
 
 	reset_avc_cache();
 out_unlock:
-	mutex_unlock(&selinux_state.policy_mutex);
+	mutex_unlock(&ksu_syms.selinux_state->policy_mutex);
 #else
 
 	cpumask_t old_mask;
@@ -574,11 +577,11 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 		pr_info("SELinux permissive or disabled when handle policy!\n");
 	}
 
-	mutex_lock(&selinux_state.policy_mutex);
+	mutex_lock(&ksu_syms.selinux_state->policy_mutex);
 
-	old_pol = selinux_state.policy;
+	old_pol = ksu_syms.selinux_state->policy;
 	pol = ksu_dup_sepolicy(rcu_dereference_protected(
-		old_pol, lockdep_is_held(&selinux_state.policy_mutex)));
+		old_pol, lockdep_is_held(&ksu_syms.selinux_state->policy_mutex)));
 	if (!pol) {
 		ret = -ENOMEM;
 		goto out_unlock;
@@ -627,7 +630,7 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 		cmd_index++;
 	}
 
-	rcu_assign_pointer(selinux_state.policy, pol);
+	rcu_assign_pointer(ksu_syms.selinux_state->policy, pol);
 	synchronize_rcu();
 	ksu_destroy_sepolicy(old_pol);
 
@@ -638,7 +641,7 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
 out_drop_new_policy:
 	ksu_destroy_sepolicy(pol);
 out_unlock:
-	mutex_unlock(&selinux_state.policy_mutex);
+	mutex_unlock(&ksu_syms.selinux_state->policy_mutex);
 out_free:
 	kvfree(payload);
 

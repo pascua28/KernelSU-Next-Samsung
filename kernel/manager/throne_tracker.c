@@ -18,6 +18,7 @@
 #include "manager_identity.h"
 #include "throne_tracker.h"
 #include "compat/kernel_compat.h"
+#include "ksu_kallsyms.h"
 
 uid_t ksu_manager_appid = KSU_INVALID_APPID;
 
@@ -184,7 +185,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 					goto skip_iterate;
 				}
 
-				iterate_dir(file, &ctx.ctx);
+				ksu_syms.iterate_dir(file, &ctx.ctx);
 				filp_close(file, NULL);
 
 				// ^ oh so thats the issue!

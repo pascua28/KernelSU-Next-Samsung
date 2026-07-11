@@ -13,6 +13,12 @@
 #include "klog.h" // IWYU pragma: keep
 #include "ss/symtab.h"
 #include "compat/kernel_compat.h" // Add check Huawei Device
+#include "../ksu_kallsyms.h"
+#include "../../security/selinux/ss/hashtab.h"
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#define SELINUX_POLICY_INSTEAD_SELINUX_SS
+#endif
 
 #define KSU_SUPPORT_ADD_TYPE
 
@@ -86,8 +92,8 @@ static bool add_typeattribute(struct policydb *db, const char *type,
 // symtab_search is introduced on 5.9.0:
 // https://elixir.bootlin.com/linux/v5.9-rc1/source/security/selinux/ss/symtab.h
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-#define symtab_search(s, name) hashtab_search((s)->table, name)
-#define symtab_insert(s, name, datum) hashtab_insert((s)->table, name, datum)
+#define symtab_search(s, name) ksu_syms.symtab_search((s)->table, name)
+#define symtab_insert(s, name, datum) ksu_syms.symtab_insert((s)->table, name, datum)
 #endif
 
 #define avtab_for_each(avtab, cur)                                             \
@@ -102,19 +108,19 @@ static struct avtab_node *get_avtab_node(struct policydb *db,
     /* AVTAB_XPERMS entries are not necessarily unique */
     if (key->specified & AVTAB_XPERMS) {
         bool match = false;
-        node = avtab_search_node(&db->te_avtab, key);
+        node = ksu_syms.avtab_search_node(&db->te_avtab, key);
         while (node) {
             if ((node->datum.u.xperms->specified == xperms->specified) &&
                 (node->datum.u.xperms->driver == xperms->driver)) {
                 match = true;
                 break;
             }
-            node = avtab_search_node_next(node, key->specified);
+            node = ksu_syms.avtab_search_node_next(node, key->specified);
         }
         if (!match)
             node = NULL;
     } else {
-        node = avtab_search_node(&db->te_avtab, key);
+        node = ksu_syms.avtab_search_node(&db->te_avtab, key);
     }
 
     if (!node) {
@@ -129,7 +135,7 @@ static struct avtab_node *get_avtab_node(struct policydb *db,
             avdatum.u.data = key->specified == AVTAB_AUDITDENY ? ~0U : 0U;
         }
         /* this is used to get the node - insertion is actually unique */
-        node = avtab_insert_nonunique(&db->te_avtab, key, &avdatum);
+        node = ksu_syms.avtab_insert_nonunique(&db->te_avtab, key, &avdatum);
 
         int grow_size = sizeof(struct avtab_key);
         grow_size += sizeof(struct avtab_datum);
@@ -152,7 +158,7 @@ static bool add_rule(struct policydb *db, const char *s, const char *t,
     struct perm_datum *perm = NULL;
 
     if (s) {
-        src = symtab_search(&db->p_types, s);
+        src = ksu_syms.symtab_search(&db->p_types, s);
         if (src == NULL) {
             pr_info("source type %s does not exist\n", s);
             return false;
@@ -160,7 +166,7 @@ static bool add_rule(struct policydb *db, const char *s, const char *t,
     }
 
     if (t) {
-        tgt = symtab_search(&db->p_types, t);
+        tgt = ksu_syms.symtab_search(&db->p_types, t);
         if (tgt == NULL) {
             pr_info("target type %s does not exist\n", t);
             return false;
@@ -168,7 +174,7 @@ static bool add_rule(struct policydb *db, const char *s, const char *t,
     }
 
     if (c) {
-        cls = symtab_search(&db->p_classes, c);
+        cls = ksu_syms.symtab_search(&db->p_classes, c);
         if (cls == NULL) {
             pr_info("class %s does not exist\n", c);
             return false;
@@ -181,9 +187,9 @@ static bool add_rule(struct policydb *db, const char *s, const char *t,
             return false;
         }
 
-        perm = symtab_search(&cls->permissions, p);
+        perm = ksu_syms.symtab_search(&cls->permissions, p);
         if (perm == NULL && cls->comdatum != NULL) {
-            perm = symtab_search(&cls->comdatum->permissions, p);
+            perm = ksu_syms.symtab_search(&cls->comdatum->permissions, p);
         }
         if (perm == NULL) {
             pr_info("perm %s does not exist in class %s\n", p, c);
@@ -364,7 +370,7 @@ static bool add_xperm_rule(struct policydb *db, const char *s, const char *t,
     struct class_datum *cls = NULL;
 
     if (s) {
-        src = symtab_search(&db->p_types, s);
+        src = ksu_syms.symtab_search(&db->p_types, s);
         if (src == NULL) {
             pr_info("source type %s does not exist\n", s);
             return false;
@@ -372,7 +378,7 @@ static bool add_xperm_rule(struct policydb *db, const char *s, const char *t,
     }
 
     if (t) {
-        tgt = symtab_search(&db->p_types, t);
+        tgt = ksu_syms.symtab_search(&db->p_types, t);
         if (tgt == NULL) {
             pr_info("target type %s does not exist\n", t);
             return false;
@@ -380,7 +386,7 @@ static bool add_xperm_rule(struct policydb *db, const char *s, const char *t,
     }
 
     if (c) {
-        cls = symtab_search(&db->p_classes, c);
+        cls = ksu_syms.symtab_search(&db->p_classes, c);
         if (cls == NULL) {
             pr_info("class %s does not exist\n", c);
             return false;
@@ -411,22 +417,22 @@ static bool add_type_rule(struct policydb *db, const char *s, const char *t,
     struct type_datum *src, *tgt, *def;
     struct class_datum *cls;
 
-    src = symtab_search(&db->p_types, s);
+    src = ksu_syms.symtab_search(&db->p_types, s);
     if (src == NULL) {
         pr_info("source type %s does not exist\n", s);
         return false;
     }
-    tgt = symtab_search(&db->p_types, t);
+    tgt = ksu_syms.symtab_search(&db->p_types, t);
     if (tgt == NULL) {
         pr_info("target type %s does not exist\n", t);
         return false;
     }
-    cls = symtab_search(&db->p_classes, c);
+    cls = ksu_syms.symtab_search(&db->p_classes, c);
     if (cls == NULL) {
         pr_info("class %s does not exist\n", c);
         return false;
     }
-    def = symtab_search(&db->p_types, d);
+    def = ksu_syms.symtab_search(&db->p_types, d);
     if (def == NULL) {
         pr_info("default type %s does not exist\n", d);
         return false;
@@ -493,22 +499,22 @@ static bool add_filename_trans(struct policydb *db, const char *s,
     struct type_datum *src, *tgt, *def;
     struct class_datum *cls;
 
-    src = symtab_search(&db->p_types, s);
+    src = ksu_syms.symtab_search(&db->p_types, s);
     if (src == NULL) {
         pr_warn("source type %s does not exist\n", s);
         return false;
     }
-    tgt = symtab_search(&db->p_types, t);
+    tgt = ksu_syms.symtab_search(&db->p_types, t);
     if (tgt == NULL) {
         pr_warn("target type %s does not exist\n", t);
         return false;
     }
-    cls = symtab_search(&db->p_classes, c);
+    cls = ksu_syms.symtab_search(&db->p_classes, c);
     if (cls == NULL) {
         pr_warn("class %s does not exist\n", c);
         return false;
     }
-    def = symtab_search(&db->p_types, d);
+    def = ksu_syms.symtab_search(&db->p_types, d);
     if (def == NULL) {
         pr_warn("default type %s does not exist\n", d);
         return false;
@@ -523,12 +529,12 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 	struct filename_trans_datum *last = NULL;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
-	struct filename_trans_datum *trans = policydb_filenametr_search(db, &key);
+	struct filename_trans_datum *trans = ksu_syms.policydb_filenametr_search(db, &key);
 #else
 	struct filename_trans_datum *trans = hashtab_search(&db->filename_trans, &key);
 #endif
 	while (trans) {
-		if (ebitmap_get_bit(&trans->stypes, src->value - 1)) {
+		if (ksu_syms.ebitmap_get_bit(&trans->stypes, src->value - 1)) {
 			// Duplicate, overwrite existing data and return
 			trans->otype = def->value;
 			return true;
@@ -548,12 +554,12 @@ static bool add_filename_trans(struct policydb *db, const char *s,
 		new_key->name = kstrdup(key.name, GFP_KERNEL);
 		trans->next = last;
 		trans->otype = def->value;
-		hashtab_insert(&db->filename_trans, new_key, trans,
-                       filenametr_key_params);
+		ksu_syms.__hashtab_insert(&db->filename_trans, new_key, trans,
+                       (void *)&filenametr_key_params);
 	}
 
 	db->compat_filename_trans_count++;
-	return ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
+	return ksu_syms.ebitmap_set_bit(&trans->stypes, src->value - 1, 1) == 0;
 #else // < 5.7.0, has no filename_trans_key, but struct filename_trans
 
 	struct filename_trans key;
@@ -602,7 +608,7 @@ static bool add_genfscon(struct policydb *db, const char *fs_name,
 
 static bool add_type(struct policydb *db, const char *type_name, bool attr)
 {
-    struct type_datum *type = symtab_search(&db->p_types, type_name);
+    struct type_datum *type = ksu_syms.symtab_search(&db->p_types, type_name);
     if (type) {
         pr_warn("Type %s already exists\n", type_name);
         return true;
@@ -625,7 +631,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
         return false;
     }
 
-    if (symtab_insert(&db->p_types, key, type)) {
+    if (ksu_syms.symtab_insert(&db->p_types, key, type)) {
         pr_err("add_type: insert symtab failed.\n");
         return false;
     }
@@ -660,7 +666,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 
     db->type_attr_map_array = new_type_attr_map_array;
     ebitmap_init(&db->type_attr_map_array[value - 1]);
-    ebitmap_set_bit(&db->type_attr_map_array[value - 1], value - 1, 1);
+    ksu_syms.ebitmap_set_bit(&db->type_attr_map_array[value - 1], value - 1, 1);
 
     db->type_val_to_struct = new_type_val_to_struct;
     db->type_val_to_struct[value - 1] = type;
@@ -670,7 +676,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
 
     int i;
     for (i = 0; i < db->p_roles.nprim; ++i) {
-        ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1,
+        ksu_syms.ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1,
                 1);
     }
 
@@ -846,16 +852,16 @@ static bool set_type_state(struct policydb *db, const char *type_name,
         ksu_hashtab_for_each(db->p_types.table, node)
         {
             type = (struct type_datum *)(node->datum);
-            if (ebitmap_set_bit(&db->permissive_map, type->value, permissive))
+            if (ksu_syms.ebitmap_set_bit(&db->permissive_map, type->value, permissive))
                 pr_info("Could not set bit in permissive map\n");
         };
     } else {
-        type = (struct type_datum *)symtab_search(&db->p_types, type_name);
+        type = (struct type_datum *)ksu_syms.symtab_search(&db->p_types, type_name);
         if (type == NULL) {
             pr_info("type %s does not exist\n", type_name);
             return false;
         }
-        if (ebitmap_set_bit(&db->permissive_map, type->value, permissive)) {
+        if (ksu_syms.ebitmap_set_bit(&db->permissive_map, type->value, permissive)) {
             pr_info("Could not set bit in permissive map\n");
             return false;
         }
@@ -878,7 +884,7 @@ static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
 	struct ebitmap *sattr =
 		flex_array_get(db->type_attr_map_array, type->value - 1);
 #endif
-    ebitmap_set_bit(sattr, attr->value - 1, 1);
+    ksu_syms.ebitmap_set_bit(sattr, attr->value - 1, 1);
 
     struct hashtab_node *node;
     struct constraint_node *n;
@@ -889,8 +895,8 @@ static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
         for (n = cls->constraints; n; n = n->next) {
             for (e = n->expr; e; e = e->next) {
                 if (e->expr_type == CEXPR_NAMES &&
-                    ebitmap_get_bit(&e->type_names->types, attr->value - 1)) {
-                    ebitmap_set_bit(&e->names, type->value - 1, 1);
+                    ksu_syms.ebitmap_get_bit(&e->type_names->types, attr->value - 1)) {
+                    ksu_syms.ebitmap_set_bit(&e->names, type->value - 1, 1);
                 }
             }
         }
@@ -900,7 +906,7 @@ static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
 static bool add_typeattribute(struct policydb *db, const char *type,
                               const char *attr)
 {
-    struct type_datum *type_d = symtab_search(&db->p_types, type);
+    struct type_datum *type_d = ksu_syms.symtab_search(&db->p_types, type);
     if (type_d == NULL) {
         pr_info("type %s does not exist\n", type);
         return false;
@@ -909,7 +915,7 @@ static bool add_typeattribute(struct policydb *db, const char *type,
         return false;
     }
 
-    struct type_datum *attr_d = symtab_search(&db->p_types, attr);
+    struct type_datum *attr_d = ksu_syms.symtab_search(&db->p_types, attr);
     if (attr_d == NULL) {
         pr_info("attribute %s does not exist\n", type);
         return false;
@@ -952,7 +958,7 @@ bool ksu_typeattribute(struct policydb *db, const char *type, const char *attr)
 
 bool ksu_exists(struct policydb *db, const char *type)
 {
-    return symtab_search(&db->p_types, type) != NULL;
+    return ksu_syms.symtab_search(&db->p_types, type) != NULL;
 }
 
 // Access vector rules
@@ -1060,7 +1066,7 @@ static int destroy_hashtab_node(void *key, void *datum, void *data)
 static int shallow_copy_hashtab(struct hashtab *new_tab,
                                 struct hashtab *old_tab)
 {
-    return hashtab_duplicate(new_tab, old_tab, copy_hashtab_node,
+    return ksu_syms.hashtab_duplicate(new_tab, old_tab, copy_hashtab_node,
                              destroy_hashtab_node, NULL);
 }
 
@@ -1103,7 +1109,7 @@ copy_class_datum_partially_callback(struct hashtab_node *new_node,
                 n->expr = e;
             }
             if (olde->expr_type == CEXPR_NAMES) {
-                if (ebitmap_cpy(&e->names, &olde->names) < 0) {
+                if (ksu_syms.ebitmap_cpy(&e->names, &olde->names) < 0) {
                     goto out_nomem;
                 }
             }
@@ -1129,7 +1135,7 @@ static int destroy_class_datum_partially_callback(void *key, void *datum,
         for (n = cls->constraints; n;) {
             for (e = n->expr; e;) {
                 if (e->expr_type == CEXPR_NAMES) {
-                    ebitmap_destroy(&e->names);
+                    ksu_syms.ebitmap_destroy(&e->names);
                 }
                 eprev = e;
                 e = e->next;
@@ -1152,9 +1158,9 @@ static void free_class_datum_partially(struct policydb *db)
     }
 
     if (db->p_classes.table.htable) {
-        hashtab_map(&db->p_classes.table,
+        ksu_syms.hashtab_map(&db->p_classes.table,
                     destroy_class_datum_partially_callback, NULL);
-        hashtab_destroy(&db->p_classes.table);
+        ksu_syms.hashtab_destroy(&db->p_classes.table);
     }
 }
 
@@ -1176,7 +1182,7 @@ static int copy_class_datum_partially(struct policydb *new_db,
     }
     new_db->class_val_to_struct = new_class_val_to_struct;
 
-    ret = hashtab_duplicate(&new_db->p_classes.table, &old_db->p_classes.table,
+    ret = ksu_syms.hashtab_duplicate(&new_db->p_classes.table, &old_db->p_classes.table,
                             copy_class_datum_partially_callback,
                             destroy_class_datum_partially_callback, new_db);
 
@@ -1197,7 +1203,7 @@ static int copy_avtab(struct avtab *new_avtab, struct avtab *old_avtab)
 {
     int ret, i;
     struct avtab_node *n, *p;
-    ret = avtab_alloc_dup(new_avtab, old_avtab);
+    ret = ksu_syms.avtab_alloc_dup(new_avtab, old_avtab);
     if (ret < 0)
         return ret;
     // avtab_alloc_dup didn't zero it
@@ -1206,7 +1212,7 @@ static int copy_avtab(struct avtab *new_avtab, struct avtab *old_avtab)
     for (i = 0; i < old_avtab->nslot; i++) {
         n = old_avtab->htable[i];
         while (n) {
-            p = avtab_insert_nonunique(new_avtab, &n->key, &n->datum);
+            p = ksu_syms.avtab_insert_nonunique(new_avtab, &n->key, &n->datum);
             if (!p) {
                 ret = -ENOMEM;
                 goto out_free;
@@ -1218,7 +1224,7 @@ static int copy_avtab(struct avtab *new_avtab, struct avtab *old_avtab)
     return 0;
 
 out_free:
-    avtab_destroy(new_avtab);
+    ksu_syms.avtab_destroy(new_avtab);
     return ret;
 }
 
@@ -1240,7 +1246,7 @@ copy_role_datum_partially_callback(struct hashtab_node *new_node,
     new_node->datum = new_role;
     new_node->key = old_node->key;
 
-    ret = ebitmap_cpy(&new_role->types, &role->types);
+    ret = ksu_syms.ebitmap_cpy(&new_role->types, &role->types);
     if (ret) {
         goto out;
     }
@@ -1255,7 +1261,7 @@ static int destroy_role_datum_partially_callback(void *key, void *datum,
 {
     struct role_datum *role = datum;
     if (role) {
-        ebitmap_destroy(&role->types);
+        ksu_syms.ebitmap_destroy(&role->types);
         kfree(role);
     }
     return 0;
@@ -1267,9 +1273,9 @@ static void free_role_datum_partially(struct policydb *db)
         kfree(db->role_val_to_struct);
     }
     if (db->p_roles.table.htable) {
-        hashtab_map(&db->p_roles.table, destroy_role_datum_partially_callback,
+        ksu_syms.hashtab_map(&db->p_roles.table, destroy_role_datum_partially_callback,
                     NULL);
-        hashtab_destroy(&db->p_roles.table);
+        ksu_syms.hashtab_destroy(&db->p_roles.table);
     }
 }
 
@@ -1291,7 +1297,7 @@ static int copy_role_datum_partially(struct policydb *new_db,
     }
     new_db->role_val_to_struct = new_role_val_to_struct;
 
-    ret = hashtab_duplicate(&new_db->p_roles.table, &old_db->p_roles.table,
+    ret = ksu_syms.hashtab_duplicate(&new_db->p_roles.table, &old_db->p_roles.table,
                             copy_role_datum_partially_callback,
                             destroy_role_datum_partially_callback, new_db);
     if (ret)
@@ -1311,7 +1317,7 @@ static void free_type_datum_partially(struct policydb *db)
     u32 sz = db->p_types.nprim, i;
     if (db->type_attr_map_array) {
         for (i = 0; i < sz; i++) {
-            ebitmap_destroy(&db->type_attr_map_array[i]);
+            ksu_syms.ebitmap_destroy(&db->type_attr_map_array[i]);
         }
 
         kvfree(db->type_attr_map_array);
@@ -1325,7 +1331,7 @@ static void free_type_datum_partially(struct policydb *db)
         kvfree(db->sym_val_to_name[SYM_TYPES]);
     }
 
-    hashtab_destroy(&db->p_types.table);
+    ksu_syms.hashtab_destroy(&db->p_types.table);
 }
 
 static int copy_type_datum_partially(struct policydb *new_db,
@@ -1352,7 +1358,7 @@ static int copy_type_datum_partially(struct policydb *new_db,
 
     new_db->type_attr_map_array = new_type_attr_map_array;
     for (i = 0; i < sz; i++) {
-        ret = ebitmap_cpy(&new_db->type_attr_map_array[i],
+        ret = ksu_syms.ebitmap_cpy(&new_db->type_attr_map_array[i],
                           &old_db->type_attr_map_array[i]);
         if (ret < 0)
             goto out;
@@ -1397,20 +1403,20 @@ out:
 
 static void free_permissive_map(struct policydb *db)
 {
-    ebitmap_destroy(&db->permissive_map);
+    ksu_syms.ebitmap_destroy(&db->permissive_map);
 }
 
 static int copy_permissive_map(struct policydb *new_db, struct policydb *old_db)
 {
     // On failure, the old ebitmap is cleaned.
-    return ebitmap_cpy(&new_db->permissive_map, &old_db->permissive_map);
+    return ksu_syms.ebitmap_cpy(&new_db->permissive_map, &old_db->permissive_map);
 }
 
 // ======== filename_trans ========
 
 static void free_filename_trans(struct policydb *db)
 {
-    hashtab_destroy(&db->filename_trans);
+    ksu_syms.hashtab_destroy(&db->filename_trans);
 }
 
 static int copy_filename_trans(struct policydb *new_db, struct policydb *old_db)
@@ -1431,7 +1437,7 @@ void ksu_destroy_sepolicy(struct selinux_policy *pol)
 
     free_class_datum_partially(db);
 
-    avtab_destroy(&db->te_avtab);
+    ksu_syms.avtab_destroy(&db->te_avtab);
 
     free_role_datum_partially(db);
 

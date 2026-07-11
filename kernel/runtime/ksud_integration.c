@@ -9,6 +9,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/version.h>
+#include <linux/preempt.h>
 #include "selinux/selinux.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #include <linux/input-event-codes.h>
@@ -39,6 +40,8 @@
 #include "ksud_boot.h"
 #include "selinux/selinux.h"
 #include "compat/kernel_compat.h"
+#include "feature/sucompat.h"
+#include "ksu_kallsyms.h"
 
 static const char KERNEL_SU_RC[] =
 	"\n"
@@ -168,7 +171,7 @@ static bool check_argv(struct user_arg_ptr argv, int index,
 	if (!p || IS_ERR(p))
 		return false;
 
-	if (strncpy_from_user_nofault(buf, p, buf_len) <= 0)
+	if (ksu_syms.strncpy_from_user_nofault(buf, p, buf_len) <= 0)
 		return false;
 
 	buf[buf_len - 1] = '\0';
@@ -223,7 +226,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			struct callback_head *cb = kzalloc(sizeof(*cb), GFP_ATOMIC);
 			if (cb) {
 				cb->func = ksu_initialize_selinux_tw_func;
-				if (task_work_add(current, cb, TWA_RESUME)) {
+				if (ksu_syms.task_work_add(current, cb, TWA_RESUME)) {
 					kfree(cb);
 					pr_warn("ksu_initialize_selinux failed to add task work\n");
 				}
@@ -257,7 +260,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 					}
 					char env[256];
 					// Reading environment variable strings from user space
-					if (strncpy_from_user_nofault(env, p, sizeof(env)) < 0)
+					if (ksu_syms.strncpy_from_user_nofault(env, p, sizeof(env)) < 0)
 						continue;
 					// Parsing environment variable names and values
 					char *env_name = env;
@@ -291,7 +294,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
 			struct task_struct *init_task =
 				rcu_dereference(current->real_parent);
 			if (init_task)
-				task_work_add(init_task, &on_post_fs_data_cb, TWA_RESUME);
+				ksu_syms.task_work_add(init_task, &on_post_fs_data_cb, TWA_RESUME);
 			rcu_read_unlock();
 			first_zygote = false;
 			stop_execve_hook();
@@ -556,7 +559,7 @@ static int sys_execve_handler_pre(struct kprobe *p, struct pt_regs *regs)
 	fn = (const char __user *)addr;
 
 	memset(path, 0, sizeof(path));
-	ret = strncpy_from_user_nofault(path, fn, 32);
+	ret = ksu_syms.strncpy_from_user_nofault(path, fn, 32);
 	if (ret < 0 && preempt_count()) {
 		preempt_enable_no_resched_notrace();
 		ret = strncpy_from_user(path, fn, 32);
@@ -712,7 +715,7 @@ static int ksu_execve_ksud_common(const char __user *filename_user,
 	if (!filename_user)
 		return 0;
 
-	len = strncpy_from_user_nofault(path, filename_user, 32);
+	len = ksu_syms.strncpy_from_user_nofault(path, filename_user, 32);
 	if (len <= 0)
 		return 0;
 

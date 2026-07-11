@@ -16,6 +16,7 @@
 
 #include "apk_sign.h"
 #include "policy/app_profile.h"
+#include "ksu_kallsyms.h"
 #include "klog.h" // IWYU pragma: keep
 #include "compat/kernel_compat.h"
 

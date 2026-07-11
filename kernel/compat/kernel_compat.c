@@ -9,10 +9,11 @@
 #include <linux/fdtable.h>
 #include "klog.h" // IWYU pragma: keep
 #include "kernel_compat.h"
+#include "../ksu_kallsyms.h"
 
 struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
 {
-	return filp_open(filename, flags, mode);
+	return ksu_syms.filp_open(filename, flags, mode);
 }
 
 ssize_t ksu_kernel_read_compat(struct file *p, void *buf, size_t count,
@@ -20,7 +21,7 @@ ssize_t ksu_kernel_read_compat(struct file *p, void *buf, size_t count,
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0) ||                          \
 	defined(KSU_OPTIONAL_KERNEL_READ)
-	return kernel_read(p, buf, count, pos);
+	return ksu_syms.kernel_read(p, buf, count, pos);
 #else
 	loff_t offset = pos ? *pos : 0;
 	ssize_t result = kernel_read(p, offset, (char *)buf, count);
@@ -36,7 +37,7 @@ ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count,
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0) ||                          \
 	defined(KSU_OPTIONAL_KERNEL_WRITE)
-	return kernel_write(p, buf, count, pos);
+	return ksu_syms.kernel_write(p, buf, count, pos);
 #else
 	loff_t offset = pos ? *pos : 0;
 	ssize_t result = kernel_write(p, buf, count, offset);
@@ -79,7 +80,7 @@ int path_mount(const char *dev_name, struct path *path, const char *type_page,
 long ksu_copy_from_user_nofault(void *dst, const void __user *src, size_t size)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
-    return copy_from_user_nofault(dst, src, size);
+    return ksu_syms.copy_from_user_nofault(dst, src, size);
 #else
     // https://elixir.bootlin.com/linux/v5.8/source/mm/maccess.c#L205
     long ret = -EFAULT;

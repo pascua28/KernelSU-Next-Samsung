@@ -2,6 +2,14 @@
 #define __KSU_H_SUCOMPAT
 #include <linux/types.h>
 
+#ifndef preempt_enable_no_resched_notrace
+#define preempt_enable_no_resched_notrace() \
+do { \
+	barrier(); \
+	__preempt_count_dec(); \
+} while (0)
+#endif
+
 extern bool ksu_su_compat_enabled;
 
 void ksu_sucompat_init(void);

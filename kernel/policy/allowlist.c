@@ -30,6 +30,7 @@
 #include "manager/manager_identity.h"
 #include "infra/su_mount_ns.h"
 #include "compat/kernel_compat.h"
+#include "ksu_kallsyms.h"
 
 #define FILE_MAGIC 0x7f4b5355 // ' KSU', u32
 #define FILE_FORMAT_VERSION 3 // u32
@@ -459,7 +460,7 @@ static void do_persistent_allow_list(struct work_struct *work)
     struct perm_data *p = NULL;
     loff_t off = 0;
 
-    const struct cred *saved = override_creds(ksu_cred);
+    const struct cred *saved = ksu_syms.override_creds(ksu_cred);
     struct file *fp =
         ksu_filp_open_compat(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (IS_ERR(fp)) {
@@ -490,7 +491,7 @@ static void do_persistent_allow_list(struct work_struct *work)
 close_file:
     filp_close(fp, 0);
 out:
-    revert_creds(saved);
+    ksu_syms.revert_creds(saved);
 }
 
 void ksu_persistent_allow_list(void)

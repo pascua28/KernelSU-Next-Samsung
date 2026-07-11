@@ -17,6 +17,7 @@
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
 #include "manager/manager_identity.h"
+#include "../ksu_kallsyms.h"
 
 #include "tiny_sulog.h"
 
@@ -207,7 +208,8 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 
 		struct new_utsname *u = utsname();
 
-		down_write(&uts_sem);
+		if (ksu_syms.uts_sem)
+			down_write((struct rw_semaphore *)ksu_syms.uts_sem);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
 		strscpy(u->release, release_buf, sizeof(u->release));
 		strscpy(u->version, version_buf, sizeof(u->version));
@@ -215,7 +217,8 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 		strlcpy(u->release, release_buf, sizeof(u->release));
 		strlcpy(u->version, version_buf, sizeof(u->version));
 #endif
-		up_write(&uts_sem);
+		if (ksu_syms.uts_sem)
+			up_write((struct rw_semaphore *)ksu_syms.uts_sem);
 
 		// we write our confirmation on **
 		if (copy_to_user((void __user *)*arg, &reply, sizeof(reply)))

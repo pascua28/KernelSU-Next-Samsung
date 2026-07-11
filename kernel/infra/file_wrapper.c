@@ -22,6 +22,8 @@
 
 #include "file_wrapper.h"
 
+#include "../ksu_kallsyms.h"
+
 struct ksu_file_wrapper {
     struct file *orig;
     struct file_operations ops;
@@ -475,7 +477,7 @@ ksu_anon_inode_make_secure_inode(const char *name,
 		return inode;
 	inode->i_flags &= ~S_PRIVATE;
 #ifdef KSU_COMPAT_HAS_INIT_SEC_ANON
-	error = security_inode_init_security_anon(inode, &qname, context_inode);
+	error = ksu_syms.security_inode_init_security_anon(inode, &qname, context_inode);
 	if (error) {
 		iput(inode);
 		return ERR_PTR(error);
@@ -500,7 +502,7 @@ static struct file *ksu_anon_inode_create_getfile_compat(
 		goto err;
 	}
 
-	file = alloc_file_pseudo(inode, anon_inode_mnt, name,
+	file = ksu_syms.alloc_file_pseudo(inode, anon_inode_mnt, name,
 				 flags & (O_ACCMODE | O_NONBLOCK), fops);
 	if (IS_ERR(file))
 		goto err_iput;

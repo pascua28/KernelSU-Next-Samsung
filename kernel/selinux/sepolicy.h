@@ -5,6 +5,9 @@
 
 #include "ss/policydb.h"
 
+void ksu_destroy_sepolicy(struct selinux_policy *orig);
+struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
+
 // Operation on types
 bool ksu_type(struct policydb *db, const char *name, const char *attr);
 bool ksu_attribute(struct policydb *db, const char *name);

@@ -20,6 +20,7 @@
 #include "hook/hook_manager.h"
 #include "policy/app_profile.h"
 #include "supercall/supercall.h"
+#include "../ksu_kallsyms.h"
 
 #include "tiny_sulog.h"
 
@@ -725,7 +726,7 @@ static int do_set_init_pgrp(void __user *arg)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
         change_pid(pids, p, PIDTYPE_PGID, init_group);
 #else
-        change_pid(p, PIDTYPE_PGID, init_group);
+        ksu_syms.change_pid(p, PIDTYPE_PGID, init_group);
 #endif
     }
 

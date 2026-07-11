@@ -19,6 +19,8 @@
 #include "ksu.h"
 #include "infra/file_wrapper.h"
 #include "selinux/selinux.h"
+#include "ksu_kallsyms.h"
+#include "ksu_defex.h"
 
 extern void __init ksu_lsm_hook_init(void);
 extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
@@ -46,6 +48,8 @@ int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
 #include <linux/random.h>
 unsigned long __stack_chk_guard __ro_after_init
     __attribute__((visibility("hidden")));
+
+struct cred *ksu_cred;
 
 __attribute__((no_stack_protector)) void __init ksu_setup_stack_chk_guard()
 {
@@ -75,6 +79,29 @@ bool ksu_late_loaded;
 
 int __init kernelsu_init(void)
 {
+	int ret;
+
+	pr_info("kernelsu: initializing KernelSU-Next LKM\n");
+
+	/* Step 1: Early CFI bypass - MUST be first before any indirect calls */
+	ret = ksu_early_cfi_bypass();
+	if (ret) {
+		pr_warn("kernelsu: early CFI bypass failed: %d (may not be needed)\n", ret);
+		/* Continue - CFI may not be enabled */
+	}
+
+	/* Step 2: Resolve all kernel symbols */
+	ret = ksu_init_symbols();
+	if (ret) {
+		pr_err("kernelsu: symbol resolution failed: %d\n", ret);
+		return ret;
+	}
+
+	ret = ksu_init_defex_bypass();
+	if (ret) {
+		pr_err("kernelsu: defex bypass failed\n");
+		return ret;
+	}
 #ifdef MODULE
 	ksu_late_loaded = (current->pid != 1);
 #else
@@ -91,7 +118,7 @@ int __init kernelsu_init(void)
 	pr_alert("*************************************************************");
 #endif
 
-    ksu_cred = prepare_creds();
+    ksu_cred = ksu_syms.prepare_creds();
     if (!ksu_cred) {
         pr_err("prepare cred failed!\n");
     }
@@ -126,12 +153,6 @@ int __init kernelsu_init(void)
 
 		ksu_boot_completed = true;
 		track_throne(false);
-
-		if (!getenforce()) {
-			pr_info("Permissive SELinux, enforcing\n");
-			setenforce(true);
-		}
-
 	} else {
 		ksu_syscall_hook_manager_init();
 		
@@ -179,7 +200,7 @@ void __exit kernelsu_exit(void)
 	ksu_feature_exit();
 
 	if (ksu_cred) {
-		put_cred(ksu_cred);
+		ksu_syms.put_cred(ksu_cred);
 	}
 }
 

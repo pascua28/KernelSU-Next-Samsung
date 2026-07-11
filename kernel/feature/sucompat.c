@@ -22,6 +22,7 @@
 #include <linux/ptrace.h>
 
 #include "objsec.h"
+#include "ksu_kallsyms.h"
 
 #include "policy/allowlist.h"
 #include "policy/feature.h"
@@ -97,7 +98,10 @@ int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
 
 	char path[sizeof(su) + 1];
 	memset(path, 0, sizeof(path));
-	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+
+	// Fallback? If symbol not found, path remains empty.
+	if (ksu_syms.strncpy_from_user_nofault)
+		ksu_syms.strncpy_from_user_nofault(path, *filename_user, sizeof(path));
 
 	if (unlikely(!memcmp(path, su, sizeof(su)))) {
 		write_sulog('a');
@@ -123,7 +127,10 @@ int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 
 	char path[sizeof(su) + 1];
 	memset(path, 0, sizeof(path));
-	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+
+	// Fallback? If symbol not found, path remains empty.
+	if (ksu_syms.strncpy_from_user_nofault)
+		ksu_syms.strncpy_from_user_nofault(path, *filename_user, sizeof(path));
 
 	if (unlikely(!memcmp(path, su, sizeof(su)))) {
 		write_sulog('s');
@@ -152,7 +159,7 @@ long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, 
 	fn = (const char __user *)addr;
 	memset(path, 0, sizeof(path));
 
-	ret = strncpy_from_user_nofault(path, fn, sizeof(path));
+	ret = ksu_syms.strncpy_from_user_nofault(path, fn, sizeof(path));
 	if (ret < 0 && preempt_count()) {
 		preempt_enable_no_resched_notrace();
 		ret = strncpy_from_user(path, fn, sizeof(path));

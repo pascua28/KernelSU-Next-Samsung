@@ -27,12 +27,23 @@
 #include "selinux/selinux.h"
 #include "infra/su_mount_ns.h"
 #include "hook/hook_manager.h"
+#include "ksu_kallsyms.h"
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
 static struct group_info root_groups = { .usage = REFCOUNT_INIT(2) };
 #else
 static struct group_info root_groups = { .usage = ATOMIC_INIT(2) };
 #endif
+
+static inline void ksu_put_group_info(struct group_info *group_info)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 7, 0)
+    if (refcount_dec_and_test(&group_info->usage))
+#else
+    if (atomic_dec_and_test(&group_info->usage))
+#endif
+        ksu_syms.groups_free(group_info);
+}
 
 void setup_groups(struct root_profile *profile, struct cred *cred)
 {
@@ -44,13 +55,13 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
 	if (profile->groups_count == 1 && profile->groups[0] == 0) {
 		// setgroup to root and return early.
 		if (cred->group_info)
-			put_group_info(cred->group_info);
+			ksu_put_group_info(cred->group_info);
 		cred->group_info = get_group_info(&root_groups);
 		return;
 	}
 
 	u32 ngroups = profile->groups_count;
-	struct group_info *group_info = groups_alloc(ngroups);
+	struct group_info *group_info = ksu_syms.groups_alloc(ngroups);
 	if (!group_info) {
 		pr_warn("Failed to setgroups, ENOMEM for: %d\n", profile->uid);
 		return;
@@ -62,7 +73,7 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
 		kgid_t kgid = make_kgid(current_user_ns(), gid);
 		if (!gid_valid(kgid)) {
 			pr_warn("Failed to setgroups, invalid gid: %d\n", gid);
-			put_group_info(group_info);
+			ksu_put_group_info(group_info);
 			return;
 		}
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
@@ -72,9 +83,9 @@ void setup_groups(struct root_profile *profile, struct cred *cred)
 #endif
 	}
 
-	groups_sort(group_info);
-	set_groups(cred, group_info);
-	put_group_info(group_info);
+	ksu_syms.groups_sort(group_info);
+	ksu_syms.set_groups(cred, group_info);
+	ksu_put_group_info(group_info);
 }
 
 void seccomp_filter_release(struct task_struct *tsk);
@@ -131,7 +142,8 @@ void disable_seccomp(void)
     // https://github.com/torvalds/linux/commit/0d8315dddd2899f519fe1ca3d4d5cdaf44ea421e#diff-45eb79a57536d8eccfc1436932f093eb5c0b60d9361c39edb46581ad313e8987R556-R558
     fake->sighand = NULL;
 #endif
-	seccomp_filter_release(fake);
+	if (ksu_syms.seccomp_filter_release)
+		ksu_syms.seccomp_filter_release(fake);
 	kfree(fake);
 #endif
 }
@@ -142,7 +154,7 @@ int escape_with_root_profile(void)
     struct root_profile profile;
 	struct user_struct *new_user;
 
-	cred = prepare_creds();
+	cred = ksu_syms.prepare_creds();
 	if (!cred) {
 		pr_warn("prepare_creds failed!\n");
 		return 0;
@@ -180,19 +192,19 @@ int escape_with_root_profile(void)
      * https://github.com/torvalds/linux/blob/v5.14/kernel/sys.c
      * https://github.com/torvalds/linux/blob/v5.14/kernel/cred.c
      */
-    new_user = alloc_uid(cred->uid);
+    new_user = ksu_syms.alloc_uid(cred->uid);
     if (!new_user) {
         goto out_abort_creds;
     }
 
-    free_uid(cred->user);
+    ksu_syms.free_uid(cred->user);
     cred->user = new_user;
 
     // v5.14+ added cred->ucounts, so we must refresh it after changing uid/user:
     // https://github.com/torvalds/linux/commit/905ae01c4ae2ae3df05bb141801b1db4b7d83c61#diff-ff6060da281bd9ef3f24e17b77a9b0b5b2ed2d7208bb69b29107bee69732bd31
     // on older kernels, per-UID process accounting lives in user_struct.
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 14, 0)
-    if (set_cred_ucounts(cred)) {
+    if (ksu_syms.set_cred_ucounts(cred)) {
         goto out_abort_creds;
     }
 #endif
@@ -210,7 +222,7 @@ int escape_with_root_profile(void)
     setup_groups(&profile, cred);
     setup_selinux(profile.selinux_domain, cred);
 
-	commit_creds(cred);
+	ksu_syms.commit_creds(cred);
 
 	disable_seccomp();
 
@@ -226,17 +238,17 @@ int escape_with_root_profile(void)
 	return 0;
 
 out_abort_creds:
-    abort_creds(cred);
+    ksu_syms.abort_creds(cred);
 	return 0;
 }
 
 void escape_to_root_for_init(void) {
-	struct cred *cred = prepare_creds();
+	struct cred *cred = ksu_syms.prepare_creds();
     if (!cred) {
         pr_err("Failed to prepare init's creds!\n");
         return;
     }
 
     setup_selinux(KERNEL_SU_CONTEXT, cred);
-    commit_creds(cred);
+    ksu_syms.commit_creds(cred);
 }

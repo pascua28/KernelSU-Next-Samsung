@@ -6,6 +6,7 @@
 #include "linux/version.h"
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
+#include "../ksu_kallsyms.h"
 
 /*
  * Cached SID values for frequently checked contexts.
@@ -36,7 +37,7 @@ static int transive_to_domain(const char *domain, struct cred *cred)
         return -1;
     }
 
-    error = security_secctx_to_secid(domain, strlen(domain), &sid);
+    error = ksu_syms.security_secctx_to_secid(domain, strlen(domain), &sid);
     if (error) {
         pr_info("security_secctx_to_secid %s -> sid: %d, error: %d\n", domain,
                 sid, error);
@@ -92,7 +93,8 @@ void setenforce(bool enforce)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 #ifdef KSU_COMPAT_USE_SELINUX_STATE
-	selinux_state.enforcing = enforce;
+	if (ksu_syms.selinux_state)
+		ksu_syms.selinux_state->enforcing = enforce;
 #else
 	selinux_enforcing = enforce;
 #endif
@@ -103,7 +105,7 @@ bool getenforce(void)
 {
 #ifdef CONFIG_SECURITY_SELINUX_DISABLE
 #ifdef KSU_COMPAT_USE_SELINUX_STATE
-	if (selinux_state.disabled) {
+	if (ksu_syms.selinux_state && ksu_syms.selinux_state->disabled) {
 		return false;
 	}
 #else
@@ -115,7 +117,7 @@ bool getenforce(void)
 
 #ifdef CONFIG_SECURITY_SELINUX_DEVELOP
 #ifdef KSU_COMPAT_USE_SELINUX_STATE
-	return selinux_state.enforcing;
+	return ksu_syms.selinux_state->enforcing;
 #else
 	return selinux_enforcing;
 #endif
@@ -132,15 +134,18 @@ struct lsm_context {
 
 static int __security_secid_to_secctx(u32 secid, struct lsm_context *cp)
 {
-    return security_secid_to_secctx(secid, &cp->context, &cp->len);
+    if (ksu_syms.security_secid_to_secctx)
+        return ksu_syms.security_secid_to_secctx(secid, &cp->context, &cp->len);
+    return -EOPNOTSUPP;
 }
 static void __security_release_secctx(struct lsm_context *cp)
 {
-    security_release_secctx(cp->context, cp->len);
+    if (ksu_syms.security_release_secctx)
+        ksu_syms.security_release_secctx(cp->context, cp->len);
 }
 #else
-#define __security_secid_to_secctx security_secid_to_secctx
-#define __security_release_secctx security_release_secctx
+#define __security_secid_to_secctx ksu_syms.security_secid_to_secctx
+#define __security_release_secctx ksu_syms.security_release_secctx
 #endif
 
 /*
@@ -153,7 +158,7 @@ void cache_sid(void)
 {
     int err;
 
-    err = security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT),
+    err = ksu_syms.security_secctx_to_secid(KERNEL_SU_CONTEXT, strlen(KERNEL_SU_CONTEXT),
                                    &cached_su_sid);
     if (err) {
         pr_warn("Failed to cache kernel su domain SID: %d\n", err);
@@ -162,7 +167,7 @@ void cache_sid(void)
         pr_info("Cached su SID: %u\n", cached_su_sid);
     }
 
-    err = security_secctx_to_secid(ZYGOTE_CONTEXT, strlen(ZYGOTE_CONTEXT),
+    err = ksu_syms.security_secctx_to_secid(ZYGOTE_CONTEXT, strlen(ZYGOTE_CONTEXT),
                                    &cached_zygote_sid);
     if (err) {
         pr_warn("Failed to cache zygote SID: %d\n", err);
@@ -171,7 +176,7 @@ void cache_sid(void)
         pr_info("Cached zygote SID: %u\n", cached_zygote_sid);
     }
 
-    err = security_secctx_to_secid(INIT_CONTEXT, strlen(INIT_CONTEXT),
+    err = ksu_syms.security_secctx_to_secid(INIT_CONTEXT, strlen(INIT_CONTEXT),
                                    &cached_init_sid);
     if (err) {
         pr_warn("Failed to cache init SID: %d\n", err);
@@ -180,7 +185,7 @@ void cache_sid(void)
         pr_info("Cached init SID: %u\n", cached_init_sid);
     }
 
-    err = security_secctx_to_secid(KSU_FILE_CONTEXT, strlen(KSU_FILE_CONTEXT),
+    err = ksu_syms.security_secctx_to_secid(KSU_FILE_CONTEXT, strlen(KSU_FILE_CONTEXT),
                                    &ksu_file_sid);
     if (err) {
         pr_warn("Failed to cache ksu_file SID: %d\n", err);
@@ -255,6 +260,7 @@ bool is_init(const struct cred *cred)
 #include <linux/slab.h>
 #include "policy/feature.h"
 #include "include/ksu.h"
+#include "../ksu_kallsyms.h"
 
 static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
 static struct page *fake_status = NULL;
@@ -270,7 +276,7 @@ static void initialize_fake_status(void)
 	if (fake_status) /* double-check after lock */
 		goto out;
 
-	struct page *real_page = selinux_kernel_status_page(&selinux_state);
+	struct page *real_page = ksu_syms.selinux_kernel_status_page(ksu_syms.selinux_state);
 	if (!real_page) {
 		pr_warn("ksu_selinux_hide: status_page not exist\n");
 		goto out;
@@ -337,7 +343,7 @@ static void hook_selinux_status_open(void)
 		return;
 
 	struct file_operations *ops =
-		(struct file_operations *)kallsyms_lookup_name(
+		(struct file_operations *)ksu_kallsyms_lookup_name(
 			"sel_handle_status_ops");
 	if (!ops) {
 		pr_err("ksu_selinux_hide: sel_handle_status_ops not found, fake status disabled\n");
@@ -355,7 +361,7 @@ static void unhook_selinux_status_open(void)
 		return;
 
 	struct file_operations *ops =
-		(struct file_operations *)kallsyms_lookup_name(
+		(struct file_operations *)ksu_kallsyms_lookup_name(
 			"sel_handle_status_ops");
 	if (!ops) {
 		pr_err("ksu_selinux_hide: sel_handle_status_ops not found on unhook\n");

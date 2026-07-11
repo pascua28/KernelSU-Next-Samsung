@@ -10,6 +10,7 @@
 #include "manager/manager_observer.h"
 #include "manager/throne_tracker.h"
 #include "selinux/selinux.h"
+#include "../ksu_kallsyms.h"
 
 bool ksu_module_mounted __read_mostly = false;
 bool ksu_boot_completed __read_mostly = false;
@@ -34,8 +35,6 @@ void on_post_fs_data(void)
 	stop_input_hook();
 }
 
-extern void ext4_unregister_sysfs(struct super_block *sb);
-
 int nuke_ext4_sysfs(const char *mnt)
 {
 	struct path path;
@@ -53,7 +52,7 @@ int nuke_ext4_sysfs(const char *mnt)
 		return -EINVAL;
 	}
 
-	ext4_unregister_sysfs(sb);
+	ksu_syms.ext4_unregister_sysfs(sb);
 	path_put(&path);
 	return 0;
 }
