@@ -268,6 +268,112 @@ pub fn exec_stage_script(stage: &str, block: bool) -> Result<()> {
     Ok(())
 }
 
+/// Whether a process is still holding a module directory.
+///
+/// Three ways it can, because the daemons that matter hold one in three
+/// different ways: `zygiskd` runs out of the module directory, so its
+/// executable is under it; `lspd` and `sui` run `/system/bin/app_process64`
+/// with the module's own apk or dex on the class path, so the mapping is what
+/// gives them away, and `lspd` additionally keeps the directory as its working
+/// directory. The reap runs before the directories are swapped, so those paths
+/// are normally still linked; the prefix match is on the string rather than on
+/// the file so that the ` (deleted)` the kernel appends matches too, which is
+/// what reaches a daemon an earlier cycle already left behind an unlinked
+/// copy of.
+fn holds_module_dir(pid: i32) -> bool {
+    let under_module_dir = |path: PathBuf| path.to_string_lossy().starts_with(MODULE_DIR);
+
+    if std::fs::read_link(format!("/proc/{pid}/exe")).is_ok_and(under_module_dir) {
+        return true;
+    }
+    if std::fs::read_link(format!("/proc/{pid}/cwd")).is_ok_and(under_module_dir) {
+        return true;
+    }
+    std::fs::read_to_string(format!("/proc/{pid}/maps")).is_ok_and(|maps| maps.contains(MODULE_DIR))
+}
+
+fn process_group_of(pid: i32) -> Option<i32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // `pid (comm) state ppid pgrp ...`, and comm can hold anything including
+    // spaces and parentheses, so start after the last `)` rather than split.
+    let (_, after_comm) = stat.rsplit_once(')')?;
+    after_comm.split_whitespace().nth(2)?.parse().ok()
+}
+
+/// Kill the daemons a previous cycle's module scripts left running.
+///
+/// A real reboot takes every one of them with it. An emulated one does not,
+/// and the stage scripts about to run a second time were written for the first
+/// case. Modules are meant to shut themselves down in the
+/// `emulated-soft-reboot` stage -- Zygisk Next does -- but most never
+/// implement it, and then they go one of two ways: refuse to start a second
+/// instance and leave the stale one in charge (LSPosed exits on its lock
+/// within a tenth of a second, and the daemon that stays is the one whose
+/// module directory post-fs-data is about to replace), or start one anyway and
+/// leave both running (Sui, one more every soft reboot).
+///
+/// This runs after `stop`, so nothing but daemons is left to match, and before
+/// the module directories are swapped and the stage scripts run again.
+pub fn kill_leftover_daemons() {
+    let my_pid = std::process::id() as i32;
+    let my_pgrp = unsafe { libc::getpgrp() };
+
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return;
+    };
+
+    let mut pids = Vec::new();
+    let mut groups = Vec::new();
+    for entry in entries.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        if pid == my_pid || pid == 1 || !holds_module_dir(pid) {
+            continue;
+        }
+
+        info!("soft-reboot: leftover module daemon {pid}");
+        pids.push(pid);
+
+        // Take the group too, for the children that hold nothing themselves --
+        // Sui's `sui_shell`, the `sh` still waiting on the daemon it started.
+        // Module scripts are given init's group by `detach_process_group`, so
+        // group 1 is every service on the device and must never be signalled.
+        let pgrp = process_group_of(pid).unwrap_or_default();
+        if pgrp > 1 && pgrp != my_pgrp && !groups.contains(&pgrp) {
+            groups.push(pgrp);
+        }
+    }
+
+    if pids.is_empty() {
+        return;
+    }
+
+    for signal in [libc::SIGTERM, libc::SIGKILL] {
+        for &pgrp in &groups {
+            unsafe { libc::kill(-pgrp, signal) };
+        }
+        for &pid in &pids {
+            unsafe { libc::kill(pid, signal) };
+        }
+        if signal == libc::SIGTERM {
+            // Both LSPosed and Sui keep a sqlite database open. WAL survives
+            // a kill either way; the grace costs a third of a second.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+    }
+
+    info!(
+        "soft-reboot: killed {} leftover module daemon(s) in {} group(s)",
+        pids.len(),
+        groups.len()
+    );
+}
+
 pub fn exec_common_scripts(dir: &str, wait: bool) -> Result<()> {
     let script_dir = Path::new(defs::ADB_DIR).join(dir);
     if !script_dir.exists() {

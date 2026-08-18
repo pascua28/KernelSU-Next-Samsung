@@ -268,6 +268,10 @@ pub fn soft_reboot() -> Result<()> {
     if !status.success() {
         warn!("stop exited with status: {status}");
     }
+    // The framework is down; whatever still holds a module directory is a
+    // daemon the last cycle's stage scripts left behind, and the scripts are
+    // about to run again.
+    crate::module::kill_leftover_daemons();
     info!("post-fs-data");
     on_post_data_fs()?;
     info!("start");
