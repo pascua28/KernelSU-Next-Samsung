@@ -71,6 +71,37 @@ pub fn run(_package_name: &String, kmi: Option<String>, allow_shell: bool) -> Re
         dump_process_info("after load_module");
     }
 
+    // Say what the module actually reports, now that it is in. Everything
+    // below can fail without KernelSU being at fault, and the caller's
+    // descriptors stop working the moment the sepolicy is reloaded, so this
+    // is the one line that says "it is loaded and answering" somewhere that
+    // survives.
+    {
+        let info = crate::ksucalls::get_info();
+        info!(
+            "KernelSU live: version={} uapi={} flags=0x{:x} features=0x{:x} late_load={}",
+            crate::ksucalls::get_version(),
+            info.uapi_version,
+            info.flags,
+            info.features,
+            crate::ksucalls::is_late_load()
+        );
+    }
+
+    // Rejoin init's mount namespace before touching modules.
+    //
+    // A late-load is exec'd from a throwaway private namespace: the caller has
+    // to unshare(CLONE_NEWNS) to bind-mount this binary over a path it is
+    // allowed to exec, and marks / as MS_REC|MS_PRIVATE so that cover does not
+    // escape. Everything below -- the metamodule mount, and every module
+    // script, which inherits this namespace -- would then run against mounts
+    // that die with this process, while the daemons those scripts start keep
+    // running and expect them. At boot ksud is already in init's namespace and
+    // none of this arises; rejoining reproduces that.
+    if let Err(e) = utils::switch_mnt_ns(1) {
+        warn!("failed to rejoin init mount namespace: {e}");
+    }
+
     // We need to reset stdin/stdout/stderr; otherwise, sending file descriptors via cmd transactions
     // will be blocked by SELinux because its fsec->sid is still u:r:su:s0 instead of u:r:ksu:s0.
     utils::reset_std()?;
@@ -111,7 +142,31 @@ pub fn run(_package_name: &String, kmi: Option<String>, allow_shell: bool) -> Re
     }
 
     // 8. Execute late-load stage scripts (blocking)
-    init_event::run_stage("late-load", true);
+    //
+    // Module stage scripts assume the environment a boot gives them: their
+    // module mounts already established, and no framework running yet. A
+    // late-load can offer neither. What they do instead is start daemons --
+    // a Zygisk implementation, LSPosed's lspd, Sui -- against a zygote that
+    // is already serving, and those daemons restart it to inject. On warhol
+    // that reliably kills system_server: it comes back up and dies in
+    // ApplicationSharedMemory.nativeCreate with ENOENT, every time, until
+    // the device is rebooted.
+    //
+    // So they are off unless asked for. KernelSU itself -- su, the manager,
+    // the allowlist -- needs none of this; only modules do, and a module
+    // that a late-load cannot mount is not one this should be starting.
+    let run_module_scripts = std::env::var("KSU_LATE_LOAD_MODULES")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if !run_module_scripts {
+        warn!(
+            "late-load: skipping module stage scripts (set KSU_LATE_LOAD_MODULES=1 to run them)"
+        );
+    }
+
+    if run_module_scripts {
+        init_event::run_stage("late-load", true);
+    }
 
     // 9. Load system.prop
     if let Err(e) = crate::module::load_system_prop() {
@@ -124,12 +179,19 @@ pub fn run(_package_name: &String, kmi: Option<String>, allow_shell: bool) -> Re
     }
 
     // 11. Execute post-mount stage scripts (blocking)
-    init_event::run_stage("post-mount", true);
+    if run_module_scripts {
+        init_event::run_stage("post-mount", true);
+    }
 
     // 12. Execute service stage scripts (non-blocking)
-    init_event::run_stage("service", false);
+    if run_module_scripts {
+        init_event::run_stage("service", false);
+    }
 
     // 13. Execute boot-completed stage scripts (non-blocking)
-    init_event::run_stage("boot-completed", false);
+    if run_module_scripts {
+        init_event::run_stage("boot-completed", false);
+    }
+
     Ok(())
 }
