@@ -1,5 +1,8 @@
 kernelsu-objs := core/init.o
 
+kernelsu-objs += compat/samsung_kdp.o
+kernelsu-objs += compat/samsung_defex.o
+
 kernelsu-objs += feature/kernel_umount.o
 kernelsu-objs += feature/sulog.o
 kernelsu-objs += feature/sucompat.o
@@ -64,6 +67,15 @@ ccflags-y += -DCONFIG_KSU_DEBUG=1
 endif
 ifeq ($(CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER),y)
 ccflags-y += -DCONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=1
+endif
+ifeq ($(CONFIG_KSU_SAMSUNG_KDP),y)
+ccflags-y += -DCONFIG_KSU_SAMSUNG_KDP=1
+endif
+ifeq ($(CONFIG_KSU_SAMSUNG_RKP),y)
+ccflags-y += -DCONFIG_KSU_SAMSUNG_RKP=1
+endif
+ifeq ($(CONFIG_KSU_SAMSUNG_DEFEX),y)
+ccflags-y += -DCONFIG_KSU_SAMSUNG_DEFEX=1
 endif
 endif
 
