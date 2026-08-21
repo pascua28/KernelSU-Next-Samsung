@@ -697,6 +697,7 @@ private fun TopBar(
             }
         },
         actions = {
+            /*
             if (ksuVersion != null) {
                 IconButton(onClick = onInstallClick) {
                     Icon(
@@ -705,6 +706,7 @@ private fun TopBar(
                     )
                 }
             }
+             */
 
             if (ksuVersion != null) {
                 var showDropdown by remember { mutableStateOf(false) }
@@ -764,11 +766,13 @@ private fun StatusCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                /*
                 .clickable {
                     if (ksuVersionParam == null) {
                         onClickInstall()
                     }
                 }
+                 */
                 .padding(24.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
                 ksuVersionParam != null -> {
@@ -898,11 +902,13 @@ private fun StatusCard(
                             text = stringResource(R.string.home_not_installed),
                             style = MaterialTheme.typography.titleMedium
                         )
+                        /*
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = stringResource(R.string.home_click_to_install),
                             style = MaterialTheme.typography.bodyMedium
                         )
+                         */
                     }
                 }
 

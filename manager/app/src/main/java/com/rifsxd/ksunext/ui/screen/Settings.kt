@@ -471,7 +471,7 @@ private fun SecurityCard(
                     )
                 }
             )
-
+            /*
             if (Natives.isLkmMode) {
                 UninstallItem(
                     navigator = navigator,
@@ -479,6 +479,7 @@ private fun SecurityCard(
                     modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
                 )
             }
+            */
         }
     }
 }
