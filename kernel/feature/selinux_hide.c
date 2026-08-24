@@ -131,6 +131,37 @@ out:
     return length;
 }
 
+static void selinux_hide_spoof(struct av_decision *avd, const char *scon, const char *tcon)
+{
+    static const struct {
+        const char *src;
+        const char *dst;
+        u32 mask;
+    } rules[] = {
+        { "fsck_untrusted", "fsck_untrusted", 0x00200000 },
+    };
+
+    if (!avd || !scon || !tcon)
+        return;
+
+    if (avd->allowed == 0)
+        return;
+
+    for (size_t i = 0; i < ARRAY_SIZE(rules); i++) {
+        const u32 mask = rules[i].mask;
+
+        if ((avd->allowed & mask) == 0)
+            continue;
+
+        if (strstr(scon, rules[i].src) && strstr(tcon, rules[i].dst)) {
+            avd->allowed &= ~mask;
+
+        if (avd->allowed == 0)
+                break;
+        }
+    }
+}
+
 static ssize_t my_write_access(struct file *file, char *buf, size_t size)
 {
     // apply to all app uids
@@ -180,6 +211,9 @@ static ssize_t my_write_access(struct file *file, char *buf, size_t size)
 
     // stock reads 1; a loader load_policy may have bumped the backup before we load
     avd.seqno = 1;
+
+    selinux_hide_spoof(&avd, scon, tcon);
+
     length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%x %x %x %x %u %x", avd.allowed, 0xffffffff, avd.auditallow,
                        avd.auditdeny, avd.seqno, avd.flags);
 out:
