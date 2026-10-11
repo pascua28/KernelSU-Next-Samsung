@@ -10,8 +10,11 @@
 #include "linux/gfp.h" // IWYU pragma: keep
 #include "linux/uaccess.h"
 #include "linux/stop_machine.h"
+#include "linux/string.h"
+#include "linux/vmalloc.h"
 #include "asm/cacheflush.h"
 #include "asm-generic/fixmap.h"
+#include "infra/symbol_resolver.h"
 
 // https://github.com/fuqiuluo/ovo/blob/f7da411458e87d32438dc14fce5a3313ed0c967e/ovo/mmuhack.c#L21
 
@@ -105,6 +108,13 @@ fail:
 #define ksu_flush_icache(start, end) __flush_icache_range(start, end)
 #endif
 
+static int (*write_literal_u64_fn)(void *addr, u64 val);
+
+void __init ksu_patch_memory_init(void)
+{
+    write_literal_u64_fn = ksu_resolve_symbol_for_functable_hook("aarch64_insn_write_literal_u64");
+}
+
 struct patch_text_info {
     void *dst;
     void *src;
@@ -131,38 +141,63 @@ struct patch_text_info {
 // not a big problem because we are in stop_machine.
 // ^1: https://github.com/NothingOSS/android_kernel_device_modules_6.1_nothing_mt6878/blob/957dac185efe46cbf6336b0fff9516d84c8cd78f/drivers/misc/mediatek/mkp/mkp_main.c#L29
 // ^2: https://github.com/torvalds/linux/commit/c0eb315ad9719e41ce44708455cc69df7ac9f3f8
-static int ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
+// For aligned 8-byte writes, aarch64_insn_write_literal_u64 (5.14+) handles
+// both words in one native poke, so the version-dependent huge-page gap above
+// does not apply to it on modern kernels. Where the helper is missing or the
+// target cannot be proven mappable, the manual fixmap path remains.
+static int __nocfi ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
 {
-    pr_debug("patch dst=0x%lx src=0x%lx len=%ld\n", (unsigned long)dst,
-             (unsigned long)src, len);
-
     unsigned long p = (unsigned long)dst;
     int ret;
 
-    int phy_err;
-    unsigned long phy = phys_from_virt(p, &phy_err);
-    if (phy_err) {
-        ret = phy_err;
-        pr_err("failed to find phy addr for patch dst addr 0x%lx\n", p);
-        goto err;
+    pr_debug("patch dst=0x%lx src=0x%lx len=%ld\n", p, (unsigned long)src, len);
+
+    if (write_literal_u64_fn && len == sizeof(u64) && IS_ALIGNED(p, sizeof(u64))) {
+        u64 value;
+
+        // The native mapper panics if vmalloc_to_page() returns NULL, and its
+        // huge-page support depends on the kernel version. Reject the native
+        // path for targets the mapper cannot prove it can map.
+        if (IS_ENABLED(CONFIG_STRICT_MODULE_RWX) &&
+            (!is_vmalloc_or_module_addr(dst) || !vmalloc_to_page(dst)))
+            return -ENOENT;
+        memcpy(&value, src, sizeof(value));
+        ret = write_literal_u64_fn(dst, value);
+        if (ret)
+            return ret;
+    } else {
+        int phy_err;
+        unsigned long phy = phys_from_virt(p, &phy_err);
+        void *map;
+
+        if (phy_err) {
+            pr_err("failed to find phy addr for patch dst addr 0x%lx\n", p);
+            return phy_err;
+        }
+        pr_debug("phy addr for patch 0x%lx: 0x%lx\n", p, phy);
+
+        map = set_fixmap_offset(FIX_TEXT_POKE0, phy);
+        pr_debug("fixmap addr for patch 0x%lx: 0x%lx\n", p, (unsigned long)map);
+        ret = (int)copy_to_kernel_nofault(map, src, len);
+        clear_fixmap(FIX_TEXT_POKE0);
+        if (ret)
+            return ret;
     }
-    pr_debug("phy addr for patch 0x%lx: 0x%lx\n", p, phy);
 
-    void *map = set_fixmap_offset(FIX_TEXT_POKE0, phy);
-    pr_debug("fixmap addr for patch 0x%lx: 0x%lx\n", p, (unsigned long)map);
+    if (flags & KSU_PATCH_TEXT_FLUSH_ICACHE)
+        ksu_flush_icache((uintptr_t)dst, (uintptr_t)dst + len);
+    if (flags & KSU_PATCH_TEXT_FLUSH_DCACHE)
+        ksu_flush_dcache(dst, len);
+    if (len == sizeof(u64)) {
+        u64 value;
 
-    ret = (int)copy_to_kernel_nofault(map, src, len);
-
-    clear_fixmap(FIX_TEXT_POKE0);
-
-    if (!ret) {
-        if (flags & KSU_PATCH_TEXT_FLUSH_ICACHE)
-            ksu_flush_icache((uintptr_t)dst, (uintptr_t)dst + len);
-        if (flags & KSU_PATCH_TEXT_FLUSH_DCACHE)
-            ksu_flush_dcache(dst, len);
+        // A writer return value and the destination content are separate
+        // evidence. Read back so callers can trust an installed hook.
+        ret = copy_from_kernel_nofault(&value, dst, sizeof(value));
+        if (!ret && memcmp(&value, src, sizeof(value)))
+            ret = -EIO;
     }
 
-err:
     pr_debug("patch result=%d\n", ret);
     return ret;
 }
