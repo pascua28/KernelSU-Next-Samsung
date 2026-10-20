@@ -14,8 +14,6 @@
 #include "infra/symbol_resolver.h"
 #include "klog.h"
 
-DEFINE_STATIC_KEY_FALSE(ksu_kdp_key);
-
 typedef struct cred *(*prepare_ro_creds_t)(struct cred *, int, u64);
 typedef void (*kdp_assign_pgd_t)(struct task_struct *);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
@@ -110,17 +108,13 @@ out:
 
 void __nocfi ksu_put_cred(const struct cred *cred)
 {
-    if (static_branch_unlikely(&ksu_kdp_key)) {
-        struct cred *m = (struct cred *)cred;
+    struct cred *m = (struct cred *)cred;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
-        if (m && kdp_usecount_sub_and_test_fn(1, m))
+    if (m && kdp_usecount_sub_and_test_fn(1, m))
 #else
-        if (m && kdp_usecount_dec_and_test_fn(m))
+    if (m && kdp_usecount_dec_and_test_fn(m))
 #endif
-            __put_cred(m);
-    } else {
-        put_cred(cred);
-    }
+        __put_cred(m);
 }
 
 int ksu_commit_creds(struct cred *cred)
@@ -130,9 +124,6 @@ int ksu_commit_creds(struct cred *cred)
 
     if (!cred)
         return -EINVAL;
-
-    if (!static_branch_unlikely(&ksu_kdp_key))
-        return commit_creds(cred);
 
     INIT_WORK(&cw.work, kdp_commit_worker);
     init_completion(&cw.completion);
@@ -176,11 +167,5 @@ void kdp_jb_init(void)
     if (!inc_rlimit_ucounts_fn || !dec_rlimit_ucounts_fn)
         return;
 #endif
-    static_branch_enable(&ksu_kdp_key);
     pr_info("KSU: Samsung KDP detected\n");
-}
-
-void kdp_jb_exit(void)
-{
-    static_branch_disable(&ksu_kdp_key);
 }

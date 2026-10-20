@@ -3,7 +3,6 @@
 #include "compat/jailbreak.h"
 
 void kdp_jb_init(void);
-void kdp_jb_exit(void);
 void rkp_jb_init(void);
 void rkp_jb_exit(void);
 void defex_jb_init(void);
@@ -18,6 +17,5 @@ int init_jailbreak(void)
 
 void exit_jailbreak(void)
 {
-    kdp_jb_exit();
     rkp_jb_exit();
 }
