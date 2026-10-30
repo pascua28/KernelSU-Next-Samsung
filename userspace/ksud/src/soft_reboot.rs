@@ -209,13 +209,13 @@ pub fn soft_reboot() -> Result<()> {
 
     info!("post-fs-data");
     on_post_fs_data()?;
+    info!("services");
+    on_services();
     info!("start");
     let status = Command::new("start").status().context("start failed")?;
     if !status.success() {
         warn!("start exited with status: {status}");
     }
-    info!("services");
-    on_services();
     if let Err(e) = wait_for_boot_completed() {
         warn!("wait for boot completed failed: {e}");
     }
