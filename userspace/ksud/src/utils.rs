@@ -326,7 +326,10 @@ pub fn reset_std() -> Result<()> {
 
 pub fn daemonize_with<F: FnOnce() -> Result<()>>(use_init_pgrp: bool, configure: F) -> Result<()> {
     if !create_daemon_impl(use_init_pgrp, configure)? {
-        unsafe { libc::_exit(0) }
+        unsafe {
+            libc::setsid();
+            libc::signal(libc::SIGHUP, libc::SIG_IGN);
+        }
     }
     Ok(())
 }
