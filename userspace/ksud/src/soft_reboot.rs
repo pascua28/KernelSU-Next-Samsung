@@ -161,11 +161,6 @@ pub fn soft_reboot() -> Result<()> {
         Ok(())
     })?;
 
-    // The framework is down; whatever still holds a module directory is a
-    // daemon the last cycle's stage scripts left behind, and the scripts are
-    // about to run again.
-    crate::module::kill_leftover_daemons();
-
     info!("emulating soft_reboot!");
     if let Err(e) = reset_boot_completed() {
         warn!("reset boot completed failed: {e}");
@@ -207,6 +202,10 @@ pub fn soft_reboot() -> Result<()> {
     }
     terminate_waitsys(&mut waitsys);
 
+    // The framework is down; whatever still holds a module directory is a
+    // daemon the last cycle's stage scripts left behind, and the scripts are
+    // about to run again.
+    crate::module::kill_leftover_daemons();
     info!("post-fs-data");
     on_post_fs_data()?;
     info!("services");
