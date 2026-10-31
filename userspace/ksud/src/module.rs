@@ -479,9 +479,8 @@ pub fn kill_leftover_daemons() {
             unsafe { libc::kill(pid, signal) };
         }
         if signal == libc::SIGTERM {
-            // Both LSPosed and Sui keep a sqlite database open. WAL survives
-            // a kill either way; the grace costs a third of a second.
-            std::thread::sleep(std::time::Duration::from_millis(300));
+            // Some tracers need longer grace period
+            std::thread::sleep(std::time::Duration::from_millis(2000));
         }
     }
 
