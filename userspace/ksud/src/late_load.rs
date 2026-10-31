@@ -35,7 +35,7 @@ fn dump_process_info(label: &str) {
     );
 }
 
-pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Result<()> {
+pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool, late_load_stages: bool) -> Result<()> {
     info!("late-load command triggered!");
     dump_process_info("late-load start");
 
@@ -117,7 +117,9 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
 
     // 8. Execute late-load stage scripts with a shared boot deadline
     let wait = ScriptWait::Until(Instant::now() + defs::BOOT_STAGE_TIMEOUT);
-    init_event::run_stage("late-load", wait);
+    if late_load_stages {
+        init_event::run_stage("late-load", wait);
+    }
 
     // 9. Load system.prop
     if let Err(e) = crate::module::load_system_prop() {
@@ -130,13 +132,19 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     }
 
     // 11. Execute post-mount stage scripts using the same deadline
-    init_event::run_stage("post-mount", wait);
+    if late_load_stages {
+        init_event::run_stage("post-mount", wait);
+    }
 
     // 12. Execute service stage scripts (non-blocking)
-    init_event::run_stage("service", ScriptWait::NoWait);
+    if late_load_stages {
+        init_event::run_stage("service", ScriptWait::NoWait);
+    }
 
     // 13. Execute boot-completed stage scripts (non-blocking)
-    init_event::run_stage("boot-completed", ScriptWait::NoWait);
+    if late_load_stages {
+        init_event::run_stage("boot-completed", ScriptWait::NoWait);
+    }
 
     // 14. Restart Manager so it gets a fresh ksu fd from the newly loaded kernel module
     info!("Restarting KernelSU Next Manager {package_name}...");
