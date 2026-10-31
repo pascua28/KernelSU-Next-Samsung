@@ -72,6 +72,8 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool, late_l
         info!("kernelsu.ko loaded successfully!");
         dump_process_info("after load_module");
     }
+    let count = utils::set_partitions_ro();
+    info!("set {count} partition(s) read-only");
 
     // We need to reset stdin/stdout/stderr; otherwise, sending file descriptors via cmd transactions
     // will be blocked by SELinux because its fsec->sid is still u:r:su:s0 instead of u:r:ksu:s0.
