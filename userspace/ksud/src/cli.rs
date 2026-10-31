@@ -55,6 +55,10 @@ enum Commands {
         /// manager package name
         #[arg(long, default_value_t = String::from("com.rifsxd.ksunext"))]
         package_name: String,
+
+        /// Run module stages during late-load
+        #[arg(long)]
+        late_load_stages: bool,
     },
 
     /// Load a kernel module with kallsyms access
@@ -729,7 +733,8 @@ pub fn run() -> Result<()> {
             package_name,
             kmi,
             allow_shell,
-        } => crate::late_load::run(&package_name, kmi, allow_shell),
+            late_load_stages,
+        } => crate::late_load::run(&package_name, kmi, allow_shell, late_load_stages),
         Commands::Services => {
             if ksucalls::get_version() <= 0 {
                 info!("KernelSU Next not available, exiting services");
