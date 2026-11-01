@@ -206,6 +206,9 @@ pub fn soft_reboot() -> Result<()> {
     // daemon the last cycle's stage scripts left behind, and the scripts are
     // about to run again.
     crate::module::kill_leftover_daemons();
+    if let Err(e) = switch_mnt_ns(1) {
+        error!("failed to switch mount ns to PID 1: {e}");
+    }
     info!("post-fs-data");
     on_post_fs_data()?;
     info!("services");
