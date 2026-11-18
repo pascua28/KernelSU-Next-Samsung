@@ -148,6 +148,88 @@ fn wait_for_boot_completed() -> Result<()> {
     Ok(())
 }
 
+struct DisableRescueParty {
+    original: Option<String>,
+    active: bool,
+}
+
+impl DisableRescueParty {
+    fn new() -> Self {
+        const PROP: &str = "persist.sys.disable_rescue";
+
+        let output = match Command::new("resetprop").arg(PROP).output() {
+            Ok(output) if output.status.success() => output,
+            _ => {
+                warn!("failed to read {PROP}");
+                return Self {
+                    original: None,
+                    active: false,
+                };
+            }
+        };
+
+        let value = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_string();
+
+        if value.is_empty() || value == "false" {
+            match Command::new("resetprop")
+                .args([PROP, "true"])
+                .status()
+            {
+                Ok(status) if status.success() => {
+                    info!("temporarily set {PROP}=true");
+                    return Self {
+                        original: if value.is_empty() {
+                            None
+                        } else {
+                            Some(value)
+                        },
+                        active: true,
+                    };
+                }
+                _ => warn!("failed to set {PROP}=true"),
+            }
+        }
+
+        Self {
+            original: None,
+            active: false,
+        }
+    }
+
+    fn restore(&mut self) {
+        if !self.active {
+            return;
+        }
+
+        const PROP: &str = "persist.sys.disable_rescue";
+
+        let status = match &self.original {
+            Some(value) => Command::new("resetprop")
+                .args([PROP, value])
+                .status(),
+            None => Command::new("resetprop")
+                .args(["-d", PROP])
+                .status(),
+        };
+
+        match status {
+            Ok(status) if status.success() => {
+                info!("restored {PROP}");
+                self.active = false;
+            }
+            _ => warn!("failed to restore {PROP}"),
+        }
+    }
+}
+
+impl Drop for DisableRescueParty {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
 pub fn soft_reboot() -> Result<()> {
     // check it avoid user click "soft_reboot" in manager when version mismatch
     if let Err(e) = ksucalls::ensure_uapi_version_matched() {
@@ -160,6 +242,8 @@ pub fn soft_reboot() -> Result<()> {
         chdir("/")?;
         Ok(())
     })?;
+
+    let mut disable_rescue = DisableRescueParty::new();
 
     info!("emulating soft_reboot!");
     if let Err(e) = reset_boot_completed() {
@@ -219,6 +303,8 @@ pub fn soft_reboot() -> Result<()> {
         warn!("wait for boot completed failed: {e}");
     }
     on_boot_completed();
+
+    disable_rescue.restore();
 
     unsafe {
         _exit(0);
